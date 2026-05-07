@@ -42,98 +42,82 @@ class LSTMEngine:
         if not TF_AVAILABLE:
             raise ImportError("TensorFlow is required for LSTM engine")
     
-    def build(self, input_shape: Tuple[int, int]) -> KerasModel:
-        """
-        Build LSTM model
-        
-        Args:
-            input_shape: (sequence_length, n_features)
-        
-        Returns:
-            Compiled Keras model
-        """
-        model = Sequential([
-            # Single LSTM layer (shallow = fast + less overfitting)
-            LSTM(
-                LSTM_CONFIG['units_layer1'],
-                input_shape=input_shape,
-                return_sequences=False  # Only final output
-            ),
-            
-            # Dropout for regularization
-            Dropout(LSTM_CONFIG['dropout']),
-            
-            # Output layer (sigmoid for binary classification)
-            Dense(1, activation='sigmoid')
-        ])
-        
-        # Compile
-        model.compile(
-            optimizer=LSTM_CONFIG['optimizer'],
-            loss=LSTM_CONFIG['loss'],
-            metrics=['accuracy']
+    def build(self, input_shape):
+        from tensorflow.keras.models import Model
+        from tensorflow.keras.layers import (
+            Input, LSTM, GRU, Dense, Dropout, 
+            Conv1D, BatchNormalization, Add, 
+            GlobalAveragePooling1D, Concatenate
         )
         
+        inputs = Input(shape=input_shape)
+        
+        # --- Branch 1: LSTM (temporal memory) ---
+        x1 = LSTM(64, return_sequences=True)(inputs)
+        x1 = Dropout(0.3)(x1)
+        x1 = LSTM(32, return_sequences=False)(x1)
+        x1 = Dropout(0.2)(x1)
+        
+        # --- Branch 2: GRU (faster, catches short patterns) ---
+        x2 = GRU(32, return_sequences=False)(inputs)
+        x2 = Dropout(0.2)(x2)
+        
+        # --- Branch 3: 1D CNN (local pattern detector) ---
+        x3 = Conv1D(32, kernel_size=3, padding='causal', activation='relu')(inputs)
+        x3 = BatchNormalization()(x3)
+        x3 = Conv1D(16, kernel_size=3, padding='causal', activation='relu')(x3)
+        x3 = GlobalAveragePooling1D()(x3)
+        
+        # --- Merge all branches ---
+        merged = Concatenate()([x1, x2, x3])
+        out = Dense(32, activation='relu')(merged)
+        out = Dropout(0.2)(out)
+        out = Dense(1, activation='sigmoid')(out)
+        
+        model = Model(inputs, out)
+        model.compile(
+            optimizer='adam',
+            loss='binary_crossentropy',
+            metrics=['accuracy']
+        )
         self.model = model
         return model
     
-    def train(
-        self, 
-        X_train: np.ndarray, 
-        y_train: np.ndarray,
-        X_val: Optional[np.ndarray] = None,
-        y_val: Optional[np.ndarray] = None,
-        verbose: int = 0
-    ) -> dict:
-        """
-        Train LSTM model
+    def train(self, X_train, y_train, X_val=None, y_val=None, verbose=0):
+        from sklearn.utils.class_weight import compute_class_weight
+        import numpy as np
         
-        Args:
-            X_train: (n_samples, sequence_length, n_features)
-            y_train: (n_samples,)
-            X_val: Optional validation data
-            y_val: Optional validation labels
-            verbose: 0=silent, 1=progress bar, 2=one line per epoch
-        
-        Returns:
-            Training history dict
-        """
         if self.model is None:
             # Auto-build if not already built
             input_shape = (X_train.shape[1], X_train.shape[2])
             self.build(input_shape)
         
-        # Early stopping to prevent overfitting
+        # Balance UP vs DOWN classes
+        classes = np.unique(y_train)
+        weights = compute_class_weight('balanced', classes=classes, y=y_train)
+        class_weight = dict(zip(classes, weights))
+        
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
         callbacks = [
-            EarlyStopping(
-                monitor='val_loss' if X_val is not None else 'loss',
-                patience=2,
-                restore_best_weights=True
-            )
+            EarlyStopping(monitor='val_loss' if X_val is not None else 'loss',
+                          patience=3, restore_best_weights=True),
+            ReduceLROnPlateau(factor=0.5, patience=2, min_lr=1e-5)
         ]
         
-        # Validation data
-        validation_data = None
-        if X_val is not None and y_val is not None:
-            validation_data = (X_val, y_val)
-        elif LSTM_CONFIG['validation_split'] > 0:
-            # Use built-in validation split
-            pass
+        val_data = (X_val, y_val) if X_val is not None else None
         
-        # Train
         history = self.model.fit(
             X_train, y_train,
-            epochs=LSTM_CONFIG['epochs'],
-            batch_size=LSTM_CONFIG['batch_size'],
-            validation_data=validation_data,
-            validation_split=LSTM_CONFIG['validation_split'] if validation_data is None else 0,
+            epochs=15,           # more epochs, early stopping handles overfit
+            batch_size=128,
+            validation_data=val_data,
+            validation_split=0.1 if val_data is None else 0.0,
             callbacks=callbacks,
+            class_weight=class_weight,
             verbose=verbose
         )
-        
         self.history = history.history
         self.is_trained = True
-        
         return self.history
     
     def predict_proba(self, X: np.ndarray) -> np.ndarray:

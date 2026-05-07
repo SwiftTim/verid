@@ -253,3 +253,36 @@ class RiskEngine:
             return "REDUCED"
         else:
             return "STOP"
+
+    def kelly_fraction(self, win_rate=None, win_loss_ratio=1.0):
+        """
+        Kelly Criterion: optimal fraction of capital to risk per trade.
+        f* = (p * b - q) / b
+        where p=win_rate, q=1-p, b=win/loss ratio
+        
+        ALWAYS use fractional Kelly (0.25x) to avoid ruin.
+        """
+        if win_rate is None:
+            win_rate = self.get_rolling_accuracy(100) or 0.5
+        
+        q = 1 - win_rate
+        b = win_loss_ratio
+        
+        # Avoid division by zero
+        if b <= 0:
+            return 0.0
+            
+        kelly = (win_rate * b - q) / b
+        
+        # Fractional Kelly (25% of full Kelly) - critical for safety
+        fractional_kelly = max(0.0, kelly * 0.25)
+        
+        # Hard cap at 2% of capital per trade regardless
+        return min(fractional_kelly, 0.02)
+
+    def get_position_size(self, account_balance, win_rate=None):
+        """
+        Returns the dollar amount to risk on the next trade.
+        """
+        fraction = self.kelly_fraction(win_rate)
+        return account_balance * fraction

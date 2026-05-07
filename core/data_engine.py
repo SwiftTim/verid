@@ -121,6 +121,29 @@ class DataEngine:
         y_test = y[split_idx:]
         
         return X_train, X_test, y_train, y_test
+
+    def walk_forward_split(self, X, y, n_splits=5):
+        """
+        Walk-forward (time-series) cross-validation.
+        MUCH more reliable accuracy estimate than single split.
+        """
+        n = len(X)
+        min_train = n // (n_splits + 1)
+        splits = []
+        
+        for i in range(1, n_splits + 1):
+            train_end = min_train * i
+            test_end  = min_train * (i + 1)
+            
+            if test_end > n:
+                break
+            
+            splits.append((
+                X[:train_end], X[train_end:test_end],
+                y[:train_end], y[train_end:test_end]
+            ))
+        
+        return splits
     
     def prepare_for_prediction(self, df: pd.DataFrame) -> Optional[np.ndarray]:
         """

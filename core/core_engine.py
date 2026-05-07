@@ -10,7 +10,7 @@ import time
 
 from .data_engine import DataEngine, StreamingBuffer
 from .feature_engine import FeatureEngine
-from .models import LSTMEngine, TreeEngine, EnsembleEngine, QAgent
+from .models import LSTMEngine, TreeEngine, EnsembleEngine, RegimeFilter
 from .risk_engine import RiskEngine
 from .config import (
     RETRAIN_CONFIG,
@@ -49,7 +49,7 @@ class HybridEngine:
         self.lstm_engine = LSTMEngine()
         self.tree_engine = TreeEngine()
         self.ensemble_engine = EnsembleEngine()
-        self.q_agent = QAgent()
+        self.q_agent = RegimeFilter()
         self.risk_engine = RiskEngine()
         
         # State
@@ -143,113 +143,92 @@ class HybridEngine:
         return results
     
     def predict_next_tick(self) -> Optional[dict]:
-        """
-        Predict next tick direction
-        
-        Returns:
-            Dict with prediction details or None if insufficient data
-        """
         if not self.is_trained:
-            raise ValueError("Engine not trained. Call initial_train() first.")
+            raise ValueError("Engine not trained.")
         
-        # 1. Get latest data
         df = self.data_engine.buffer.get_dataframe()
-        
         if len(df) < SEQUENCE_LENGTH:
             return None
         
-        # 2. Generate features
         df = self.feature_engine.transform(df)
-        
-        # 3. Prepare sequence for prediction
         X = self.data_engine.prepare_for_prediction(df)
-        
         if X is None:
             return None
         
-        # 4. Get predictions from both models
-        lstm_prob = self.lstm_engine.predict_proba(X)[0]
-        
+        lstm_prob = float(self.lstm_engine.predict_proba(X)[0])
         X_flat = X.reshape(1, -1)
-        tree_prob = self.tree_engine.predict_proba(X_flat)[0]
+        tree_prob = float(self.tree_engine.predict_proba(X_flat)[0])
         
-        # 5. Ensemble fusion
-        combined_prob = self.ensemble_engine.combine_probabilities(lstm_prob, tree_prob)
-        decision, confidence = self.ensemble_engine.make_decision(combined_prob)
+        # Use meta-learner if available
+        combined_prob = self.ensemble_engine.combine_with_meta(lstm_prob, tree_prob)
         
-        # 6. Get RL state
-        latest_features = self.data_engine.get_latest_features(df)
-        recent_acc = self.ensemble_engine.get_recent_accuracy(50)
+        # Get current market features for regime filter
+        latest = self.data_engine.get_latest_features(df)
+        vol_zscore    = float(df['vol_zscore'].iloc[-1]) if 'vol_zscore' in df.columns else 0.0
+        buy_pressure  = float(df['buy_pressure'].iloc[-1]) if 'buy_pressure' in df.columns else 0.5
+        autocorr      = float(df['autocorr_1'].iloc[-1]) if 'autocorr_1' in df.columns else 0.0
         
-        rl_state = self.q_agent.get_state(
-            confidence=confidence,
-            win_rate=recent_acc if recent_acc is not None else 0.5,
-            volatility=latest_features['volatility'],
-            streak=latest_features['streak']
+        decision, confidence = self.ensemble_engine.make_decision(
+            combined_prob, volatility=latest['volatility']
         )
         
-        # 7. RL execution decision
-        rl_action = self.q_agent.act(rl_state, explore=True)
+        # Regime/RL filter
+        risk_approved    = self.risk_engine.should_trade()
+        regime_approved  = self.q_agent.should_execute(
+            confidence, vol_zscore, buy_pressure, autocorr
+        ) if hasattr(self.q_agent, 'should_execute') else True
         
-        # 8. Risk check
-        risk_approved = self.risk_engine.should_trade()
-        
-        # 9. Final decision
-        final_decision = decision if (rl_action == 1 and risk_approved) else "SKIP"
+        final_decision = decision if (regime_approved and risk_approved) else "SKIP"
         
         self.prediction_count += 1
-        
-        result = {
-            'tick_number': self.tick_count,
-            'prediction_number': self.prediction_count,
-            'lstm_prob': float(lstm_prob),
-            'tree_prob': float(tree_prob),
-            'combined_prob': float(combined_prob),
-            'ensemble_decision': decision,
-            'confidence': float(confidence),
-            'rl_action': 'EXECUTE' if rl_action == 1 else 'SKIP',
-            'risk_approved': risk_approved,
-            'final_decision': final_decision,
-            'threshold': self.ensemble_engine.threshold
+        self._last_state = {        # Store for update_with_outcome()
+            'confidence': confidence,
+            'vol_zscore': vol_zscore,
+            'buy_pressure': buy_pressure,
+            'autocorr': autocorr
         }
         
-        return result
-    
-    def update_with_outcome(self, prediction: dict, actual_direction: int):
-        """
-        Update models with actual outcome
+        # Position sizing
+        kelly_pct = self.risk_engine.kelly_fraction()
         
-        Args:
-            prediction: Result from predict_next_tick()
-            actual_direction: Actual tick direction (1=UP, 0=DOWN)
-        """
-        # Determine if prediction was correct
+        return {
+            'tick_number':      self.tick_count,
+            'prediction_number': self.prediction_count,
+            'lstm_prob':        lstm_prob,
+            'tree_prob':        tree_prob,
+            'combined_prob':    float(combined_prob),
+            'ensemble_decision': decision,
+            'confidence':       float(confidence),
+            'regime_approved':  regime_approved,
+            'risk_approved':    risk_approved,
+            'final_decision':   final_decision,
+            'kelly_pct':        float(kelly_pct),
+            'threshold':        self.ensemble_engine.threshold
+        }
+    
+    def update_with_outcome(self, prediction, actual_direction):
         was_correct = (
-            (prediction['ensemble_decision'] == 'BUY' and actual_direction == 1) or
+            (prediction['ensemble_decision'] == 'BUY'  and actual_direction == 1) or
             (prediction['ensemble_decision'] == 'SELL' and actual_direction == 0)
         )
         
-        # Update ensemble history
         self.ensemble_engine.log_prediction(
             prediction['combined_prob'],
             prediction['ensemble_decision'],
             actual_direction
         )
         
-        # Update RL (only if trade was executed)
         if prediction['final_decision'] != 'SKIP':
-            reward = 1.0 if was_correct else -1.0
-            
-            # Get current state (simplified - would need to reconstruct)
-            # For now, use dummy next state
-            current_state = 0  # Would need to store from prediction
-            next_state = 0
-            action = 1 if prediction['rl_action'] == 'EXECUTE' else 0
-            
-            self.q_agent.update(current_state, action, reward, next_state)
-            
-            # Update risk engine
             self.risk_engine.update(1 if was_correct else 0)
+            
+            # Feed regime filter with real outcome
+            if hasattr(self.q_agent, 'record_outcome') and hasattr(self, '_last_state'):
+                s = self._last_state
+                self.q_agent.record_outcome(
+                    s['confidence'], s['vol_zscore'],
+                    s['buy_pressure'], s['autocorr'],
+                    was_correct
+                )
         
         # Log performance
         self.performance_log.append({
@@ -315,8 +294,9 @@ class HybridEngine:
         X_train_flat = X_train.reshape(X_train.shape[0], -1)
         self.tree_engine.train(X_train_flat, y_train)
         
-        # Decay RL exploration
-        self.q_agent.decay_epsilon()
+        # Decay RL exploration (if applicable)
+        if hasattr(self.q_agent, 'decay_epsilon'):
+            self.q_agent.decay_epsilon()
         
         # Update adaptive threshold
         recent_acc = self.ensemble_engine.get_recent_accuracy(200)

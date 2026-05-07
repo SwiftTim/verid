@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 import asyncio
 import json
+import os
 from datetime import datetime
 
 # Import Deriv WebSocket client
@@ -36,12 +37,13 @@ app.add_middleware(
 # CONFIGURATION
 # ============================================================
 
-# Colab API URL (from ngrok)
-COLAB_URL = "https://63aa-34-12-116-227.ngrok-free.app"
+# Colab API URL (from environment variable or ngrok)
+COLAB_URL = os.getenv("COLAB_URL", "https://63aa-34-12-116-227.ngrok-free.app")
 
 # Auto-predict settings
 AUTO_PREDICT_ENABLED = True
 AUTO_PREDICT_BATCH_SIZE = 50
+MIN_TICKS_FOR_PREDICTION = 100
 
 # ============================================================
 # GLOBAL STATE
@@ -150,15 +152,15 @@ async def handle_tick(tick: Dict):
     """
     Handle incoming tick from Deriv
     """
-    global tick_buffer, active_connections, colab_client, prediction_buffer, total_ticks
+    global tick_buffer, total_ticks, prediction_buffer, active_connections, colab_client
     
     # Add to buffer
     tick_buffer.append(tick)
     total_ticks += 1
     
     # Keep buffer size manageable
-    if len(tick_buffer) > 1000:
-        tick_buffer = tick_buffer[-1000:]
+    if len(tick_buffer) > 2000:
+        tick_buffer = tick_buffer[-2000:]
     
     # Broadcast to connected frontends
     if active_connections:
@@ -167,23 +169,23 @@ async def handle_tick(tick: Dict):
             'data': tick
         })
     
-    # Auto-predict: Send to Colab every N ticks
-    if AUTO_PREDICT_ENABLED and colab_client and total_ticks % AUTO_PREDICT_BATCH_SIZE == 0:
+    # Only predict when we have enough data AND on batch boundary
+    enough_data = len(tick_buffer) >= MIN_TICKS_FOR_PREDICTION
+    on_batch    = total_ticks % AUTO_PREDICT_BATCH_SIZE == 0
+    
+    if AUTO_PREDICT_ENABLED and colab_client and enough_data and on_batch:
         try:
-            # Send last 100 ticks to Colab
-            result = await colab_client.predict(tick_buffer[-100:])
+            # Send last 200 ticks to Colab for better context
+            result = await colab_client.predict(tick_buffer[-200:])
             
             if result:
                 prediction = result.get('prediction')
-                status = result.get('status', {})
-                
-                # Check GPU status
-                gpu_up = status.get('gpu_available', False)
-                is_trained = status.get('is_trained', False)
-                tick_count = status.get('tick_count', 0)
+                status     = result.get('status', {})
                 
                 if prediction:
                     prediction_buffer.append(prediction)
+                    if len(prediction_buffer) > 500:
+                        prediction_buffer = prediction_buffer[-500:]
                     
                     # Broadcast to frontends
                     if active_connections:
@@ -194,20 +196,11 @@ async def handle_tick(tick: Dict):
                     
                     # Log significant predictions
                     decision = prediction.get('final_decision', 'SKIP')
-                    conf = prediction.get('confidence', 0)
-                    if decision != 'SKIP':
-                        print(f"🎯 Prediction: {decision} (confidence: {conf:.2%}) "
-                              f"[GPU: {'✅' if gpu_up else '❌'}]")
-                    else:
-                        print(f"⏩ SKIP (confidence: {conf:.2%}) "
-                              f"[GPU: {'✅' if gpu_up else '❌'}]")
-                else:
-                    # No prediction yet (waiting for training)
-                    print(f"🧠 AI Learning... {tick_count}/500 ticks "
-                          f"[GPU: {'✅' if gpu_up else '❌'}]")
-
+                    conf     = prediction.get('confidence', 0)
+                    print(f"{'🎯' if decision != 'SKIP' else '⏩'} {decision} "
+                          f"(conf: {conf:.2%}) | ticks: {total_ticks}")
         except Exception as e:
-            print(f"⚠️ Auto-predict error: {e}")
+            print(f"⚠️ Predict error: {e}")
     
     # Log progress
     if len(tick_buffer) % 100 == 0:

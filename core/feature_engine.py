@@ -24,70 +24,80 @@ class FeatureEngine:
     
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Generate all features
-        
-        Input: DataFrame with ['timestamp', 'quote']
-        Output: DataFrame with engineered features
+        Generate robust features for synthetic indices
         """
         df = df.copy()
         
-        # ============ CORE FEATURES ============
-        
-        # 1. Tick difference (primary signal)
+        # --- CORE ---
         df['tick_diff'] = df['quote'].diff()
-        
-        # 2. Direction (target variable)
         df['direction'] = (df['tick_diff'] > 0).astype(int)
         
-        # ============ ROLLING STATISTICS ============
+        # --- VOLATILITY REGIME (most predictive on synthetics) ---
+        for w in [5, 10, 20]:
+            df[f'vol_{w}'] = df['tick_diff'].rolling(w).std()
         
-        # 3-4. Rolling means
-        for window in ROLLING_WINDOWS['mean']:
-            df[f'rolling_mean_{window}'] = df['quote'].rolling(window).mean()
+        df['vol_ratio'] = df['vol_5'] / (df['vol_20'] + 1e-8)  # regime shift detector
+        df['vol_zscore'] = (df['vol_10'] - df['vol_10'].rolling(50).mean()) / (df['vol_10'].rolling(50).std() + 1e-8)
         
-        # 5-6. Rolling standard deviations (volatility proxy)
-        for window in ROLLING_WINDOWS['std']:
-            df[f'rolling_std_{window}'] = df['tick_diff'].rolling(window).std()
+        # --- MOMENTUM (multiple timeframes) ---
+        for w in [3, 5, 10, 20]:
+            df[f'mom_{w}'] = df['quote'].pct_change(w)
         
-        # 7-8. Momentum (price change over window)
-        for window in ROLLING_WINDOWS['momentum']:
-            df[f'momentum_{window}'] = df['quote'] - df['quote'].shift(window)
+        # --- MEAN REVERSION SIGNALS ---
+        df['ma_5'] = df['quote'].rolling(5).mean()
+        df['ma_20'] = df['quote'].rolling(20).mean()
+        df['ma_cross'] = df['ma_5'] - df['ma_20']           # golden/death cross
+        df['dist_from_ma20'] = (df['quote'] - df['ma_20']) / (df['vol_20'] + 1e-8)
         
-        # ============ MICROSTRUCTURE FEATURES ============
+        # --- STREAK & RUNS (key for pseudo-random series) ---
+        # Consecutive same-direction ticks
+        direction_change = (df['direction'] != df['direction'].shift(1)).astype(int)
+        run_id = direction_change.cumsum()
+        df['streak'] = df.groupby(run_id).cumcount() + 1
+        df['streak'] = df['streak'] * (df['direction'] * 2 - 1)  # signed
         
-        # 9. Volatility (10-tick window)
-        df['volatility'] = df['tick_diff'].rolling(10).std()
+        # --- AUTOCORRELATION FEATURES (pseudo-random series have weak -ve autocorr) ---
+        df['autocorr_1'] = df['tick_diff'].rolling(20).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 2 else 0, raw=False
+        )
+        df['autocorr_2'] = df['tick_diff'].rolling(20).apply(
+            lambda x: x.autocorr(lag=2) if len(x) > 2 else 0, raw=False
+        )
         
-        # 10. Streak detection
-        df['streak'] = self._calculate_streak(df)
+        # --- RSI (overbought/oversold) ---
+        delta = df['tick_diff']
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / (loss + 1e-8)
+        df['rsi_14'] = 100 - (100 / (1 + rs))
+        df['rsi_norm'] = (df['rsi_14'] - 50) / 50   # normalize to -1..1
         
-        # 11. Mean reversion signal
-        df['mean_reversion'] = (df['quote'] - df['rolling_mean_5']) / (df['rolling_std_5'] + 1e-8)
+        # --- HIGHER-ORDER STATS ---
+        df['skew_10'] = df['tick_diff'].rolling(10).skew()
+        df['kurt_10'] = df['tick_diff'].rolling(10).kurt()
         
-        # 12. Tick acceleration (2nd derivative)
-        df['acceleration'] = df['tick_diff'].diff()
+        # --- TICK SIZE ANALYSIS ---
+        df['abs_diff'] = df['tick_diff'].abs()
+        df['rel_tick_size'] = df['abs_diff'] / (df['abs_diff'].rolling(20).mean() + 1e-8)
+        df['big_move'] = (df['rel_tick_size'] > 2.0).astype(int)  # outlier ticks
         
-        # 13. Up/Down ratio (last 10 ticks)
-        df['up_down_ratio'] = df['direction'].rolling(10).mean()
+        # --- UP/DOWN RATIO (pressure) ---
+        df['buy_pressure'] = df['direction'].rolling(10).mean()
+        df['buy_pressure_fast'] = df['direction'].rolling(5).mean()
+        df['pressure_diff'] = df['buy_pressure_fast'] - df['buy_pressure']
         
-        # ============ NORMALIZATION ============
+        # --- NORMALIZE (rolling z-score, NOT global - avoids lookahead bias) ---
+        skip_norm = {'timestamp', 'quote', 'direction', 'tick_diff', 
+                    'streak', 'big_move', 'direction'}
+        for col in df.columns:
+            if col not in skip_norm and df[col].dtype in [np.float64, np.int64]:
+                roll_mean = df[col].rolling(200, min_periods=20).mean()
+                roll_std  = df[col].rolling(200, min_periods=20).std()
+                df[col] = (df[col] - roll_mean) / (roll_std + 1e-8)
         
-        # Normalize features to prevent scale issues
-        df = self._normalize_features(df)
-        
-        # ============ CLEANUP ============
-        
-        # Drop NaN rows (from rolling windows)
         df = df.dropna()
-        
-        # Store feature names
-        self.feature_names = [col for col in df.columns 
-                             if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
-        
-        # Safety check: limit feature count
-        if len(self.feature_names) > MAX_FEATURES:
-            print(f"⚠️ Warning: {len(self.feature_names)} features exceeds MAX_FEATURES ({MAX_FEATURES})")
-        
+        self.feature_names = [c for c in df.columns 
+                            if c not in ['timestamp', 'quote', 'direction', 'tick_diff']]
         return df
     
     def _calculate_streak(self, df: pd.DataFrame) -> pd.Series:

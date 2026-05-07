@@ -22,11 +22,15 @@ class EnsembleEngine:
     """
     
     def __init__(self):
+        from sklearn.calibration import CalibratedClassifierCV
         self.lstm_weight = ENSEMBLE_WEIGHTS['lstm']
         self.tree_weight = ENSEMBLE_WEIGHTS['tree']
         self.threshold = INITIAL_THRESHOLD
         self.prediction_history = []
         self.accuracy_history = []
+        self.meta_learner = None
+        self.calibration_data = []
+        self.MAX_THRESHOLD = MAX_THRESHOLD
     
     def combine_probabilities(
         self, 
@@ -35,20 +39,37 @@ class EnsembleEngine:
     ) -> float:
         """
         Weighted fusion of probabilities
-        
-        Args:
-            lstm_prob: LSTM probability (0-1)
-            tree_prob: Tree probability (0-1)
-        
-        Returns:
-            Combined probability (0-1)
         """
         combined = (
             self.lstm_weight * lstm_prob + 
             self.tree_weight * tree_prob
         )
-        
         return combined
+
+    def calibrate_and_stack(self, lstm_probs, tree_probs, y_true):
+        """
+        Train a meta-learner (logistic regression) on top of base model outputs.
+        """
+        from sklearn.linear_model import LogisticRegression
+        import numpy as np
+        
+        X_meta = np.column_stack([lstm_probs, tree_probs,
+                                   lstm_probs * tree_probs,           # interaction
+                                   np.abs(lstm_probs - tree_probs)])  # disagreement
+        
+        self.meta_learner = LogisticRegression(C=0.1, random_state=42)
+        self.meta_learner.fit(X_meta, y_true)
+        print("✅ Meta-learner (stacking) trained")
+
+    def combine_with_meta(self, lstm_prob, tree_prob):
+        """Use meta-learner if available, else fall back to weighted average."""
+        if self.meta_learner is not None:
+            import numpy as np
+            X_meta = np.array([[lstm_prob, tree_prob,
+                                 lstm_prob * tree_prob,
+                                 abs(lstm_prob - tree_prob)]])
+            return float(self.meta_learner.predict_proba(X_meta)[0, 1])
+        return self.combine_probabilities(lstm_prob, tree_prob)
     
     def combine_batch(
         self,
@@ -70,30 +91,19 @@ class EnsembleEngine:
             self.tree_weight * tree_probs
         )
     
-    def make_decision(
-        self, 
-        combined_prob: float,
-        threshold: Optional[float] = None
-    ) -> Tuple[str, float]:
+    def make_decision(self, combined_prob, volatility=None, threshold=None):
         """
-        Convert probability to trading decision
-        
-        Args:
-            combined_prob: Combined probability (0-1)
-            threshold: Optional custom threshold (uses self.threshold if None)
-        
-        Returns:
-            Tuple of (decision, confidence)
-            decision: "BUY", "SELL", or "SKIP"
-            confidence: How far from threshold (0-1)
+        Volatility-aware decision: widen the no-trade zone in high volatility.
         """
         if threshold is None:
             threshold = self.threshold
         
-        # Calculate confidence (distance from neutral)
+        # In high volatility, require higher confidence
+        if volatility is not None and volatility > 1.5:
+            threshold = min(threshold + 0.03, self.MAX_THRESHOLD)
+        
         confidence = abs(combined_prob - 0.5)
         
-        # Decision logic
         if combined_prob > threshold:
             decision = "BUY"
         elif combined_prob < (1 - threshold):
