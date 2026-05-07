@@ -38,7 +38,7 @@ app.add_middleware(
 # ============================================================
 
 # Colab API URL (from environment variable or ngrok)
-COLAB_URL = os.getenv("COLAB_URL", "https://63aa-34-12-116-227.ngrok-free.app")
+COLAB_URL = os.getenv("COLAB_URL", "https://a8ee-34-87-27-170.ngrok-free.app")
 
 # Auto-predict settings
 AUTO_PREDICT_ENABLED = True
@@ -121,7 +121,7 @@ async def startup_event():
     # Initialize Deriv WebSocket client
     deriv_client = DerivTickStream(
         app_id='1089',
-        symbol='R_100',
+        symbol='1HZ100V',
         on_tick=handle_tick,
         on_error=handle_error,
         on_connect=handle_connect
@@ -166,7 +166,8 @@ async def handle_tick(tick: Dict):
     if active_connections:
         await broadcast_to_clients({
             'type': 'tick',
-            'data': tick
+            'data': tick,
+            'total_ticks': total_ticks
         })
     
     # Only predict when we have enough data AND on batch boundary
@@ -174,33 +175,47 @@ async def handle_tick(tick: Dict):
     on_batch    = total_ticks % AUTO_PREDICT_BATCH_SIZE == 0
     
     if AUTO_PREDICT_ENABLED and colab_client and enough_data and on_batch:
-        try:
-            # Send last 200 ticks to Colab for better context
-            result = await colab_client.predict(tick_buffer[-200:])
+        # RUN IN BACKGROUND TO AVOID BLOCKING TICK STREAM
+        asyncio.create_task(run_prediction(list(tick_buffer[-200:]), total_ticks))
+
+async def run_prediction(ticks: List[Dict], current_total_ticks: int):
+    """
+    Background task for Colab prediction to avoid blocking the main tick stream
+    """
+    global colab_client, prediction_buffer, active_connections
+    if not colab_client:
+        return
+        
+    try:
+        result = await colab_client.predict(ticks)
+        
+        if result:
+            prediction = result.get('prediction')
+            status     = result.get('status', {})
             
-            if result:
-                prediction = result.get('prediction')
-                status     = result.get('status', {})
+            if prediction:
+                prediction_buffer.append(prediction)
+                if len(prediction_buffer) > 500:
+                    prediction_buffer = prediction_buffer[-500:]
                 
-                if prediction:
-                    prediction_buffer.append(prediction)
-                    if len(prediction_buffer) > 500:
-                        prediction_buffer = prediction_buffer[-500:]
-                    
-                    # Broadcast to frontends
-                    if active_connections:
-                        await broadcast_to_clients({
-                            'type': 'prediction',
-                            'data': prediction
-                        })
-                    
-                    # Log significant predictions
-                    decision = prediction.get('final_decision', 'SKIP')
-                    conf     = prediction.get('confidence', 0)
-                    print(f"{'🎯' if decision != 'SKIP' else '⏩'} {decision} "
-                          f"(conf: {conf:.2%}) | ticks: {total_ticks}")
-        except Exception as e:
-            print(f"⚠️ Predict error: {e}")
+                # Broadcast to frontends
+                if active_connections:
+                    await broadcast_to_clients({
+                        'type': 'prediction',
+                        'data': prediction
+                    })
+                
+                # Log significant predictions
+                decision = prediction.get('final_decision', 'SKIP')
+                conf     = prediction.get('confidence', 0)
+                print(f"{'🎯' if decision != 'SKIP' else '⏩'} {decision} "
+                        f"(conf: {conf:.2%}) | ticks: {current_total_ticks}")
+            else:
+                # No prediction yet (waiting for training)
+                tick_count = status.get('tick_count', 0)
+                print(f"🧠 AI Learning... {tick_count}/500 ticks | Total seen: {current_total_ticks}")
+    except Exception as e:
+        print(f"⚠️ Predict error: {e}")
     
     # Log progress
     if len(tick_buffer) % 100 == 0:
@@ -279,14 +294,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
 async def broadcast_to_clients(message: Dict):
     """
-    Broadcast message to all connected WebSocket clients
+    Broadcast message to all connected WebSocket clients (SAFE ITERATION)
     """
-    for connection in active_connections:
+    # Create a copy to iterate safely
+    for connection in list(active_connections):
         try:
             await connection.send_json(message)
-        except:
-            # Remove dead connections
-            active_connections.remove(connection)
+        except Exception as e:
+            print(f"⚠️ WebSocket broadcast error: {e}")
+            if connection in active_connections:
+                active_connections.remove(connection)
+                print("🔌 Removed dead WebSocket connection")
 
 # ============================================================
 # REST API ENDPOINTS

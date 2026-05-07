@@ -91,27 +91,70 @@ class EnsembleEngine:
             self.tree_weight * tree_probs
         )
     
-    def make_decision(self, combined_prob, volatility=None, threshold=None):
+    def make_decision(self, combined_prob, volatility=None, threshold=None,
+                      lstm_prob=None, tree_prob=None,
+                      entropy=None, vol_regime=None, market_regime=None):
         """
-        Volatility-aware decision: widen the no-trade zone in high volatility.
+        Enhanced decision with:
+        - Model disagreement filter  (Phase 1)
+        - Entropy-based SKIP filter  (Phase 1)
+        - Minimum confidence gate    (Phase 1)
+        - Regime-based dynamic weights (Phase 1)
+        - Volatility-aware threshold widening
         """
         if threshold is None:
             threshold = self.threshold
-        
-        # In high volatility, require higher confidence
+
+        # ── 1. DYNAMIC WEIGHTS based on market regime ──────────────────
+        if market_regime is not None:
+            if market_regime == 1:   # TREND → LSTM is better
+                effective_lstm = 0.70
+                effective_tree = 0.30
+            elif market_regime == 0: # RANGE → Tree is better
+                effective_lstm = 0.40
+                effective_tree = 0.60
+            else:                    # HIGH VOL → balanced but conservative
+                effective_lstm = 0.50
+                effective_tree = 0.50
+            # Recompute combined_prob with regime weights
+            if lstm_prob is not None and tree_prob is not None:
+                combined_prob = effective_lstm * lstm_prob + effective_tree * tree_prob
+
+        # ── 2. VOLATILITY THRESHOLD WIDENING ───────────────────────────
         if volatility is not None and volatility > 1.5:
             threshold = min(threshold + 0.03, self.MAX_THRESHOLD)
-        
+
+        # ── 3. MODEL DISAGREEMENT FILTER ───────────────────────────────
+        if lstm_prob is not None and tree_prob is not None:
+            disagreement = abs(lstm_prob - tree_prob)
+            if disagreement > 0.20:   # >20% disagreement → unreliable
+                return "SKIP", 0.0
+
+        # ── 4. ENTROPY FILTER ──────────────────────────────────────────
+        if entropy is not None and not np.isnan(entropy):
+            if entropy > 2.3:         # market is too random → skip
+                return "SKIP", 0.0
+
+        # ── 5. VOL REGIME FILTER ───────────────────────────────────────
+        if vol_regime is not None and vol_regime >= 2:
+            return "SKIP", 0.0        # high volatility regime → skip
+
         confidence = abs(combined_prob - 0.5)
-        
+
+        # ── 6. MINIMUM CONFIDENCE GATE ─────────────────────────────────
+        if confidence < 0.06:
+            return "SKIP", confidence
+
+        # ── 7. FINAL DECISION ──────────────────────────────────────────
         if combined_prob > threshold:
             decision = "BUY"
         elif combined_prob < (1 - threshold):
             decision = "SELL"
         else:
             decision = "SKIP"
-        
+
         return decision, confidence
+
     
     def make_batch_decisions(
         self,

@@ -255,7 +255,7 @@
             if (msg.type === 'tick') {
                 updateChart(msg.data);
                 document.getElementById('current-price').innerText = msg.data.quote.toFixed(2);
-                document.getElementById('tick-count').innerText = ticksArray.length; // Approximate
+                document.getElementById('tick-count').innerText = msg.total_ticks;
             }
             else if (msg.type === 'prediction') {
                 updateSignal(msg.data);

@@ -67,37 +67,38 @@ class DataEngine:
         self.sequence_length = sequence_length
         self.buffer = StreamingBuffer()
     
-    def create_sequences(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def create_sequences(self, df: pd.DataFrame, lookahead: int = 3) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Create sequences for LSTM training
-        
-        Args:
-            df: DataFrame with features
-        
+        Create sequences for LSTM training.
+        lookahead=3 means we predict the *net* direction over the next 3 ticks,
+        reducing 1-tick noise significantly.
+
         Returns:
             X: (n_samples, sequence_length, n_features)
-            y: (n_samples,) - binary labels (1=UP, 0=DOWN)
+            y: (n_samples,) - binary labels (1=UP majority, 0=DOWN majority)
         """
-        if len(df) < self.sequence_length + 1:
+        if len(df) < self.sequence_length + lookahead:
             return np.array([]), np.array([])
-        
-        # Extract feature columns (exclude timestamp, quote, direction)
-        feature_cols = [col for col in df.columns 
-                       if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
-        
+
+        feature_cols = [col for col in df.columns
+                        if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
+
         X, y = [], []
-        
-        for i in range(len(df) - self.sequence_length):
-            # Sequence of features
+
+        for i in range(len(df) - self.sequence_length - lookahead):
             seq = df.iloc[i:i + self.sequence_length][feature_cols].values
-            
-            # Target: next tick direction (1=UP, 0=DOWN)
-            target = int(df.iloc[i + self.sequence_length]['direction'])
-            
+
+            # Majority direction over next `lookahead` ticks (less noisy label)
+            future_directions = df.iloc[
+                i + self.sequence_length: i + self.sequence_length + lookahead
+            ]['direction'].values
+            target = int(future_directions.mean() > 0.5)
+
             X.append(seq)
             y.append(target)
-        
+
         return np.array(X), np.array(y)
+
     
     def time_split(
         self, 

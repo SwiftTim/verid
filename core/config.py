@@ -101,7 +101,7 @@ COLAB_CONFIG = {
 DERIV_CONFIG = {
     'app_id': 'V35FbErHFzWjhj5',  # Your Deriv API key
     'api_token': None,  # Optional: for authenticated operations
-    'symbol': 'R_100',  # Volatility 100 Index (~1.5 ticks/sec)
+    'symbol': '1HZ100V',  # Volatility 100 (1s) Index (Matches site price)
     # Alternative symbols:
     # 'R_50': ~2 ticks/sec
     # 'R_75': ~1.3 ticks/sec
@@ -111,9 +111,24 @@ DERIV_CONFIG = {
     'max_reconnect_attempts': 10
 }
 
+# ==================== PHASE 1 FILTERS ====================
+# Entropy: skip when market is too random
+ENTROPY_THRESHOLD = 2.3
+# Minimum model confidence before executing a trade
+CONFIDENCE_THRESHOLD = 0.06
+# Volatility spike threshold (z-score) above which we skip
+VOLATILITY_SPIKE = 2.5
+
+# Dynamic ensemble weights per market regime
+REGIME_WEIGHTS = {
+    'trend':    {'lstm': 0.70, 'tree': 0.30},
+    'range':    {'lstm': 0.40, 'tree': 0.60},
+    'high_vol': {'lstm': 0.50, 'tree': 0.50},
+}
+
 # ==================== VALIDATION RULES ====================
 VALIDATION = {
     'min_ticks_for_prediction': SEQUENCE_LENGTH + 1,
-    'max_tick_gap_seconds': 10,  # Alert if tick stream stalls
+    'max_tick_gap_seconds': 10,
     'sanity_check_enabled': True
 }

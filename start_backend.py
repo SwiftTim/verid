@@ -8,7 +8,8 @@ import os
 
 if __name__ == "__main__":
     print("🚀 Starting Deriv Predictor Backend...")
-    print(f"🔗 Colab URL: https://78f5-34-125-208-121.ngrok-free.app")
+    from backend.main import COLAB_URL
+    print(f"🔗 Colab URL: {COLAB_URL}")
     print("=" * 60)
     
     # Run uvicorn

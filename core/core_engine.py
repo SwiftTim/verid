@@ -100,7 +100,7 @@ class HybridEngine:
         df = self.feature_engine.transform(df)
         
         # 3. Create sequences
-        X, y = self.data_engine.create_sequences(df)
+        X, y = self.data_engine.create_sequences(df, lookahead=3)
         
         if len(X) == 0:
             raise ValueError("Failed to create sequences")
@@ -162,14 +162,23 @@ class HybridEngine:
         # Use meta-learner if available
         combined_prob = self.ensemble_engine.combine_with_meta(lstm_prob, tree_prob)
         
-        # Get current market features for regime filter
-        latest = self.data_engine.get_latest_features(df)
-        vol_zscore    = float(df['vol_zscore'].iloc[-1]) if 'vol_zscore' in df.columns else 0.0
-        buy_pressure  = float(df['buy_pressure'].iloc[-1]) if 'buy_pressure' in df.columns else 0.5
-        autocorr      = float(df['autocorr_1'].iloc[-1]) if 'autocorr_1' in df.columns else 0.0
-        
+        # Get current market context
+        latest        = self.data_engine.get_latest_features(df)
+        vol_zscore    = float(df['vol_zscore'].iloc[-1])    if 'vol_zscore'    in df.columns else 0.0
+        buy_pressure  = float(df['buy_pressure'].iloc[-1])  if 'buy_pressure'  in df.columns else 0.5
+        autocorr      = float(df['autocorr_1'].iloc[-1])    if 'autocorr_1'    in df.columns else 0.0
+        entropy       = float(df['entropy_20'].iloc[-1])     if 'entropy_20'    in df.columns else np.nan
+        vol_regime    = float(df['vol_regime'].iloc[-1])     if 'vol_regime'    in df.columns else 1.0
+        market_regime = float(df['market_regime'].iloc[-1])  if 'market_regime' in df.columns else 0.0
+
         decision, confidence = self.ensemble_engine.make_decision(
-            combined_prob, volatility=latest['volatility']
+            combined_prob,
+            volatility=latest['volatility'],
+            lstm_prob=lstm_prob,
+            tree_prob=tree_prob,
+            entropy=entropy,
+            vol_regime=vol_regime,
+            market_regime=market_regime
         )
         
         # Regime/RL filter
@@ -181,11 +190,14 @@ class HybridEngine:
         final_decision = decision if (regime_approved and risk_approved) else "SKIP"
         
         self.prediction_count += 1
-        self._last_state = {        # Store for update_with_outcome()
-            'confidence': confidence,
-            'vol_zscore': vol_zscore,
-            'buy_pressure': buy_pressure,
-            'autocorr': autocorr
+        self._last_state = {
+            'confidence':    confidence,
+            'vol_zscore':    vol_zscore,
+            'buy_pressure':  buy_pressure,
+            'autocorr':      autocorr,
+            'entropy':       entropy,
+            'vol_regime':    vol_regime,
+            'market_regime': market_regime
         }
         
         # Position sizing
@@ -203,7 +215,10 @@ class HybridEngine:
             'risk_approved':    risk_approved,
             'final_decision':   final_decision,
             'kelly_pct':        float(kelly_pct),
-            'threshold':        self.ensemble_engine.threshold
+            'threshold':        self.ensemble_engine.threshold,
+            'entropy':          float(entropy) if not np.isnan(entropy) else None,
+            'vol_regime':       int(vol_regime),
+            'market_regime':    int(market_regime)
         }
     
     def update_with_outcome(self, prediction, actual_direction):
