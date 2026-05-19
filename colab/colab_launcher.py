@@ -38,6 +38,10 @@ def create_app(engine, MODEL_DIR):
         quote: float
         symbol: str
 
+    @app.get("/")
+    async def root():
+        return {"status": "ok", "engine_ready": True, "tick_count": engine.tick_count}
+
     @app.post("/predict")
     async def predict(request: Dict):
         try:
