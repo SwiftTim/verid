@@ -210,6 +210,15 @@ class FeatureEngine:
                 df[col] = (df[col] - roll_mean) / (roll_std + 1e-8)
 
         df = df.dropna()
+        
+        # FINAL ENSURANCE: All columns must be numeric for LSTM/Tree
+        # (Fixes Keras ValueError: Invalid dtype: object)
+        for col in df.columns:
+            if col not in ['timestamp']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype(np.float32)
+        
+        df = df.dropna()
+
         self.feature_names = [
             c for c in df.columns
             if c not in ['timestamp', 'quote', 'direction', 'tick_diff']
