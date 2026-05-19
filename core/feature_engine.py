@@ -201,15 +201,23 @@ class FeatureEngine:
         # ─────────────────────────────────────────────
         skip_norm = {
             'timestamp', 'quote', 'direction', 'tick_diff',
-            'streak', 'big_move', 'tradeable', 'market_regime', 'vol_regime'
+            'streak', 'big_move', 'tradeable', 'market_regime', 'vol_regime',
+            'entropy_20', 'vol_regime', 'market_regime'
         }
+        
+        # Adaptive normalization window
+        norm_window = min(200, len(df) // 3)
+        if norm_window < 10: norm_window = 10
+
         for col in df.columns:
             if col not in skip_norm and df[col].dtype in [np.float64, np.float32, np.int64]:
-                roll_mean = df[col].rolling(200, min_periods=20).mean()
-                roll_std  = df[col].rolling(200, min_periods=20).std()
+                roll_mean = df[col].rolling(norm_window, min_periods=5).mean()
+                roll_std  = df[col].rolling(norm_window, min_periods=5).std()
                 df[col] = (df[col] - roll_mean) / (roll_std + 1e-8)
 
-        df = df.dropna()
+        # Only drop rows where essential features are missing
+        # Instead of all columns, we check if we have enough numeric data
+        df = df.dropna(subset=['rsi_14', 'autocorr_1', 'vol_ratio', 'mom_10'])
         
         # FINAL ENSURANCE: All columns must be numeric for LSTM/Tree
         # (Fixes Keras ValueError: Invalid dtype: object)
