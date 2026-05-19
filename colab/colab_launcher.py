@@ -50,35 +50,13 @@ def create_app(engine, MODEL_DIR):
                 engine.add_tick(tick)
 
             if not engine.is_trained and engine.tick_count >= 500:
-                print(f"\n🚀 DEBUG: Training Triggered | Ticks in buffer: {len(engine.data_engine.buffer.buffer)}")
-                
-                # Manual training step to show progress/debug
+                print(f"\n🚀 TRAINING TRIGGERED | Ticks: {engine.tick_count}")
                 try:
-                    df = engine.data_engine.buffer.get_dataframe()
-                    print(f"   - Raw DF: {df.shape}")
-                    
-                    df = engine.feature_engine.transform(df)
-                    print(f"   - After Features: {df.shape}")
-                    
-                    # Safety fillna if dropped too many rows
-                    if len(df) < 50:
-                         print("   ⚠️ WARNING: Many rows dropped, using fillna(0) safety...")
-                         # Get raw again and fill instead of drop
-                         df = engine.data_engine.buffer.get_dataframe()
-                         df = engine.feature_engine.transform(df)
-                         df = df.fillna(0)
-                         print(f"   - After Safety Fill: {df.shape}")
-
-                    X, y = engine.data_engine.create_sequences(df, lookahead=3)
-                    print(f"   - Sequences X: {len(X)}")
-                    
-                    if len(X) > 0:
-                        engine.initial_train()
-                        engine.save_models(MODEL_DIR)
-                    else:
-                         print("   ❌ Still 0 sequences. Need more data.")
+                    results = engine.initial_train()
+                    print(f"✅ Training Complete: LSTM Acc: {results['lstm_accuracy']:.2%} | Tree Acc: {results['tree_accuracy']:.2%}")
+                    engine.save_models(MODEL_DIR)
                 except Exception as e:
-                    print(f"   ❌ Training step failed: {e}")
+                    print(f"❌ Training failed: {e}")
                     traceback.print_exc()
 
             prediction = engine.predict_next_tick() if engine.is_trained else None
