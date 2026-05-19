@@ -100,13 +100,21 @@ def run_launcher():
     # Kill existing port 8000
     os.system("fuser -k 8000/tcp > /dev/null 2>&1")
     
-    # Run uvicorn in thread
+    # Run uvicorn manually to avoid nest_asyncio conflict
     import uvicorn
+    import asyncio
+    
     def start_uvicorn():
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+        config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="warning")
+        server = uvicorn.Server(config)
+        
+        # New loop for the thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(server.serve())
     
     threading.Thread(target=start_uvicorn, daemon=True).start()
-    time.sleep(3)
+    time.sleep(5)
 
     # Cloudflare Tunnel
     print("🌐 Launching Cloudflare Tunnel...")
