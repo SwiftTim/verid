@@ -215,9 +215,9 @@ class FeatureEngine:
                 roll_std  = df[col].rolling(norm_window, min_periods=5).std()
                 df[col] = (df[col] - roll_mean) / (roll_std + 1e-8)
 
-        # Only drop rows where essential features are missing
-        # Instead of all columns, we check if we have enough numeric data
-        df = df.dropna(subset=['rsi_14', 'autocorr_1', 'vol_ratio', 'mom_10'])
+        # Fill NaNs with 0 instead of dropping rows
+        # This ensures we don't lose the entire dataset if one feature is noisy
+        df = df.fillna(0)
         
         # FINAL ENSURANCE: All columns must be numeric for LSTM/Tree
         # (Fixes Keras ValueError: Invalid dtype: object)
@@ -225,7 +225,7 @@ class FeatureEngine:
             if col not in ['timestamp']:
                 df[col] = pd.to_numeric(df[col], errors='coerce').astype(np.float32)
         
-        df = df.dropna()
+        df = df.fillna(0)
 
         self.feature_names = [
             c for c in df.columns
