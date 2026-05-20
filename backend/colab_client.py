@@ -30,7 +30,7 @@ class ColabClient:
     def __init__(
         self,
         colab_url: str,
-        timeout: float = 30.0,
+        timeout: float = 300.0,  # 5 minutes — allows for initial LSTM training
         max_retries: int = 3
     ):
         """
@@ -135,7 +135,7 @@ class ColabClient:
         url = f"{self.colab_url}/retrain"
         
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=600.0) as client:  # 10 min for big retrains
                 response = await client.post(url)
                 response.raise_for_status()
                 

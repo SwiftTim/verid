@@ -2,323 +2,882 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deriv Predictor Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0f172a;
-            color: #e2e8f0;
-            margin: 0;
-            padding: 20px;
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 20px;
-            height: 100vh;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deriv AutoTrader</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;600;700&display=swap');
 
-        .sidebar {
-            background-color: #1e293b;
-            padding: 20px;
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
+    :root {
+      --bg: #090c10;
+      --surface: #0d1117;
+      --border: #1c2333;
+      --text: #cdd9e5;
+      --muted: #6b7280;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --purple: #bc8cff;
+      --cyan: #39d0d8;
+    }
 
-        .main-content {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-        .card {
-            background-color: #1e293b;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 48px 1fr;
+      grid-template-columns: 1fr;
+    }
 
-        h1,
-        h2,
-        h3 {
-            margin: 0;
-        }
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
 
-        h1 {
-            font-size: 1.5rem;
-            color: #38bdf8;
-        }
+    .logo {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+    }
 
-        h2 {
-            font-size: 1rem;
-            color: #94a3b8;
-            font-weight: normal;
-        }
+    .logo span {
+      color: var(--text);
+      font-weight: 300;
+    }
 
-        .signal-box {
-            background-color: #334155;
-            border-radius: 12px;
-            padding: 30px;
-            text-align: center;
-            height: 200px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: all 0.3s ease;
-        }
+    .hdr-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
 
-        .signal-box.UP {
-            background-color: #059669;
-            box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
-        }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--red);
+      display: inline-block;
+      margin-right: 5px;
+      box-shadow: 0 0 6px currentColor;
+    }
 
-        .signal-box.DOWN {
-            background-color: #dc2626;
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
-        }
+    .dot.live {
+      background: var(--green);
+      color: var(--green);
+    }
 
-        .signal-box.SKIP {
-            background-color: #475569;
-        }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
 
-        .signal-text {
-            font-size: 4rem;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
+    .badge-auto {
+      background: #0d4429;
+      color: var(--green);
+      border: 1px solid var(--green);
+    }
 
-        .confidence {
-            font-size: 1.2rem;
-            opacity: 0.8;
-        }
+    .badge-paper {
+      background: #1c1a0a;
+      color: var(--yellow);
+      border: 1px solid var(--yellow);
+    }
 
-        .stat-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: 220px 1fr 260px;
+      grid-template-rows: 1fr;
+      gap: 0;
+      height: 100%;
+      overflow: hidden;
+    }
 
-        .stat-item {
-            background-color: #334155;
-            padding: 10px;
-            border-radius: 8px;
-        }
+    .col {
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
 
-        .stat-label {
-            font-size: 0.8rem;
-            color: #94a3b8;
-        }
+    .col:last-child {
+      border-right: none;
+    }
 
-        .stat-value {
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
+    /* scrollbar */
+    .col::-webkit-scrollbar {
+      width: 4px;
+    }
 
-        #price-chart {
-            width: 100%;
-            height: 100%;
-        }
+    .col::-webkit-scrollbar-track {
+      background: transparent;
+    }
 
-        .status-dot {
-            height: 10px;
-            width: 10px;
-            background-color: #ef4444;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
-        }
+    .col::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
 
-        .status-dot.connected {
-            background-color: #22c55e;
-        }
-    </style>
+    /* ── Panel components ─────────────────────────────────────────────────── */
+    .panel {
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px;
+    }
+
+    .panel-title {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* ── Signal box ─────────────────────────────────────────────────── */
+    .signal-wrap {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .signal-box {
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      border: 1px solid var(--border);
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .signal-box::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      opacity: 0.06;
+      pointer-events: none;
+    }
+
+    .signal-box.BUY {
+      border-color: var(--green);
+    }
+
+    .signal-box.BUY::before {
+      background: var(--green);
+    }
+
+    .signal-box.SELL {
+      border-color: var(--red);
+    }
+
+    .signal-box.SELL::before {
+      background: var(--red);
+    }
+
+    .signal-box.SKIP {
+      border-color: var(--border);
+    }
+
+    .signal-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .BUY .signal-label {
+      color: var(--green);
+    }
+
+    .SELL .signal-label {
+      color: var(--red);
+    }
+
+    .SKIP .signal-label {
+      color: var(--muted);
+    }
+
+    .signal-conf {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── KV rows ─────────────────────────────────────────────────── */
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .kv:last-child {
+      margin-bottom: 0;
+    }
+
+    .kv-key {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .kv-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .green {
+      color: var(--green);
+    }
+
+    .red {
+      color: var(--red);
+    }
+
+    .blue {
+      color: var(--blue);
+    }
+
+    .yellow {
+      color: var(--yellow);
+    }
+
+    /* ── Model bars ─────────────────────────────────────────────────── */
+    .model-bar-wrap {
+      margin-bottom: 10px;
+    }
+
+    .model-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    .model-bar-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      position: relative;
+    }
+
+    .model-bar-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── Chart area ─────────────────────────────────────────────────── */
+    .chart-area {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .chart-card canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .chart-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ── Trades list ─────────────────────────────────────────────────── */
+    .trade-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #0d1117;
+      font-size: 11px;
+    }
+
+    .trade-item:last-child {
+      border-bottom: none;
+    }
+
+    .trade-dir {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      min-width: 38px;
+      text-align: center;
+    }
+
+    .trade-dir.BUY {
+      background: #0d2a1a;
+      color: var(--green);
+    }
+
+    .trade-dir.SELL {
+      background: #2a0d0d;
+      color: var(--red);
+    }
+
+    .trade-info {
+      flex: 1;
+    }
+
+    .trade-pnl {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+    }
+
+    /* ── Alerts ─────────────────────────────────────────────────── */
+    .alert-item {
+      font-size: 10px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.4;
+    }
+
+    .alert-WARNING {
+      background: #1c1a0a;
+      border-left: 2px solid var(--yellow);
+    }
+
+    .alert-CRITICAL {
+      background: #1a0d0d;
+      border-left: 2px solid var(--red);
+    }
+
+    .alert-INFO {
+      background: #0a0f1a;
+      border-left: 2px solid var(--blue);
+    }
+
+    /* ── Controls ─────────────────────────────────────────────────── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      margin-bottom: 8px;
+      transition: all 0.15s;
+      text-align: center;
+    }
+
+    .btn:hover {
+      background: var(--border);
+    }
+
+    .btn-green {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .btn-green:hover {
+      background: #0d2a1a;
+    }
+
+    .btn-red {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .btn-red:hover {
+      background: #2a0d0d;
+    }
+
+    .btn-blue {
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .btn-blue:hover {
+      background: #0d1a2a;
+    }
+  </style>
 </head>
 
 <body>
 
-    <!-- Sidebar: Stats & Info -->
-    <div class="sidebar">
-        <div>
-            <h1>Deriv Predictor</h1>
-            <h2><span id="connection-status" class="status-dot"></span><span id="status-text">Disconnected</span></h2>
-        </div>
+  <header>
+    <div class="logo">DERIV<span> // AUTOTRADER</span></div>
+    <div class="hdr-status">
+      <span><span class="dot" id="ws-dot"></span><span id="ws-label">DISCONNECTED</span></span>
+      <span id="auto-badge" class="badge badge-paper">PAPER</span>
+      <span id="symbol-label" style="color:var(--muted);">--</span>
+      <span id="price-label" style="font-family:'JetBrains Mono',monospace; font-weight:700;">-.----</span>
+    </div>
+  </header>
 
-        <div class="stat-grid">
-            <div class="stat-item">
-                <div class="stat-label">Symbol</div>
-                <div class="stat-value">R_100</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Current Price</div>
-                <div class="stat-value" id="current-price">--</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Ticks Seen</div>
-                <div class="stat-value" id="tick-count">0</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Predictions</div>
-                <div class="stat-value" id="pred-count">0</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Kelly Bet Size</div>
-                <div class="stat-value" id="kelly-size">--%</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Regime</div>
-                <div class="stat-value" id="regime-status">--</div>
-            </div>
-        </div>
+  <div class="grid">
 
-        <div class="card">
-            <h3>Engine Status</h3>
-            <p style="font-size: 0.9rem; color: #cbd5e1; margin-top: 10px;" id="engine-message">
-                Waiting for data...
-            </p>
+    <!-- ── Left sidebar ─────────────────────────────────────────────── -->
+    <div class="col">
+      <div class="signal-wrap">
+        <div class="panel-title">Live Signal</div>
+        <div class="signal-box SKIP" id="signal-box">
+          <div class="signal-label" id="signal-text">WAIT</div>
+          <div class="signal-conf" id="signal-conf">Buffering data…</div>
         </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Models</div>
+        <div class="model-bar-wrap">
+          <div class="model-bar-label">
+            <span style="color:var(--blue)">LSTM</span>
+            <span id="lstm-pct" style="font-family:'JetBrains Mono',monospace">--</span>
+          </div>
+          <div class="model-bar-track">
+            <div class="model-bar-fill" id="lstm-bar" style="width:50%;background:var(--blue)"></div>
+          </div>
+        </div>
+        <div class="model-bar-wrap">
+          <div class="model-bar-label">
+            <span style="color:var(--purple)">TREE</span>
+            <span id="tree-pct" style="font-family:'JetBrains Mono',monospace">--</span>
+          </div>
+          <div class="model-bar-track">
+            <div class="model-bar-fill" id="tree-bar" style="width:50%;background:var(--purple)"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Session</div>
+        <div class="kv"><span class="kv-key">Ticks</span><span class="kv-val" id="stat-ticks">0</span></div>
+        <div class="kv"><span class="kv-key">Predictions</span><span class="kv-val" id="stat-preds">0</span></div>
+        <div class="kv"><span class="kv-key">Trades</span><span class="kv-val" id="stat-trades">0</span></div>
+        <div class="kv"><span class="kv-key">Win rate</span><span class="kv-val" id="stat-wr">--</span></div>
+        <div class="kv"><span class="kv-key">Net P&L</span><span class="kv-val" id="stat-pnl">$0.00</span></div>
+        <div class="kv"><span class="kv-key">Drawdown</span><span class="kv-val" id="stat-dd">0.0%</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Risk</div>
+        <div class="kv"><span class="kv-key">Kelly stake</span><span class="kv-val blue" id="stat-kelly">--</span></div>
+        <div class="kv"><span class="kv-key">Regime</span><span class="kv-val" id="stat-regime">--</span></div>
+        <div class="kv"><span class="kv-key">Vol regime</span><span class="kv-val" id="stat-vol">--</span></div>
+        <div class="kv"><span class="kv-key">Open pos.</span><span class="kv-val" id="stat-open">0</span></div>
+      </div>
+
+      <!-- Velocity Bot Panel -->
+      <div class="panel" style="border-top: 1px solid var(--cyan); background: rgba(57, 208, 216, 0.03);">
+        <div class="panel-title" style="color:var(--cyan)">Velocity Execution</div>
+        <div class="kv"><span class="kv-key">Bot P&L</span><span class="kv-val" id="bot-pnl">$0.00</span></div>
+        <div class="kv"><span class="kv-key">Cycles</span><span class="kv-val" id="bot-cycles">0</span></div>
+
+        <div style="margin-top: 12px; gap: 8px; display: flex; flex-direction: column;">
+          <select id="bot-mode" class="btn" style="text-align: left; margin-bottom: 0;">
+            <option value="TREND">Mode: Trend Follow</option>
+            <option value="ALT">Mode: Alternating</option>
+            <option value="BUY">Mode: Only Buy</option>
+            <option value="SELL">Mode: Only Sell</option>
+          </select>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 9px; color: var(--muted); text-transform: uppercase;">Freq</span>
+            <input type="number" id="bot-freq" value="5" min="1"
+              style="flex: 1; background: transparent; border: 1px solid var(--border); color: white; border-radius: 4px; padding: 2px 5px; font-family: 'JetBrains Mono'; font-size: 11px;">
+          </div>
+          <button id="velocity-btn" class="btn btn-blue" style="margin-top: 5px;" onclick="toggleVelocityBot()">START
+            BOT</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Main Content: Signal & Chart -->
-    <div class="main-content">
-        <!-- Big Signal Box -->
-        <div id="signal-box" class="signal-box SKIP">
-            <div class="signal-text" id="signal-text">WAIT</div>
-            <div class="confidence" id="confidence-text">Buffering data...</div>
-        </div>
-
-        <!-- Chart -->
-        <div class="card" style="flex-grow: 1; position: relative;">
-            <canvas id="priceChart"></canvas>
-        </div>
+    <!-- ── Center: charts ────────────────────────────────────────── -->
+    <div class="col chart-area">
+      <div class="chart-card" style="flex:2">
+        <div class="chart-label">Price · R_100</div>
+        <canvas id="price-chart"></canvas>
+      </div>
+      <div class="chart-card" style="flex:1">
+        <div class="chart-label">Equity Curve</div>
+        <canvas id="equity-chart"></canvas>
+      </div>
     </div>
 
-    <script>
-        // Connect to WebSocket
-        const socket = new WebSocket('ws://localhost:8000/ws');
+    <!-- ── Right sidebar ─────────────────────────────────────────── -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">Controls</div>
+        <button class="btn btn-green" onclick="toggleAuto()">⚡ Toggle Auto-Trade</button>
+        <button class="btn btn-blue" onclick="forceRetrain()">🔄 Force Retrain</button>
+        <button class="btn" onclick="fetchPerf()">📊 Refresh Metrics</button>
+      </div>
 
-        // Chart Setup
-        const ctx = document.getElementById('priceChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Price (R_100)',
-                    data: [],
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.1,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { display: false },
-                    y: {
-                        position: 'right',
-                        grid: { color: '#334155' },
-                        ticks: { color: '#94a3b8' }
-                    }
-                }
-            }
+      <div class="panel">
+        <div class="panel-title">Recent Trades</div>
+        <div id="trades-list">
+          <div style="color:var(--muted);font-size:11px">No trades yet</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Alerts</div>
+        <div id="alerts-list">
+          <div style="color:var(--muted);font-size:11px">No alerts</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ── Config ────────────────────────────────────────────────────────
+    const API_KEY = (new URLSearchParams(location.search)).get('key') || '';
+    const headers = { 'X-API-Key': API_KEY };
+
+    // ── Chart setup ───────────────────────────────────────────────────
+    const chartOpts = (label, color) => ({
+      type: 'line',
+      data: {
+        labels: [], datasets: [{
+          label, data: [], borderColor: color,
+          backgroundColor: color + '10', borderWidth: 1.5,
+          pointRadius: 0, tension: 0.1, fill: true
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { display: false },
+          y: {
+            position: 'right', grid: { color: '#1c2333' },
+            ticks: { color: '#6b7280', font: { family: 'JetBrains Mono', size: 10 } }
+          }
+        }
+      }
+    });
+
+    const priceChart = new Chart(document.getElementById('price-chart'), chartOpts('Price', '#39d0d8'));
+    const equityChart = new Chart(document.getElementById('equity-chart'), chartOpts('Equity', '#3fb950'));
+
+    const MAX_PTS = 200;
+    function pushChart(chart, label, value) {
+      chart.data.labels.push(label);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > MAX_PTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update('none');
+    }
+
+    // ── State ─────────────────────────────────────────────────────────
+    let sessionBalance = 100;
+    let sessionTrades = 0;
+    let sessionWins = 0;
+    let sessionPnl = 0;
+    let totalTicks = 0;
+    let totalPredictions = 0;
+    let autoTradeOn = false;
+
+    let velocityBot = {
+      active: false,
+      lastTradeTick: 0,
+      pnl: 0,
+      wins: 0,
+      total: 0,
+      lastDirection: 'SELL'
+    };
+
+    // ── WebSocket ─────────────────────────────────────────────────────
+    let ws;
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('ws-dot').classList.add('live');
+        document.getElementById('ws-label').textContent = 'LIVE';
+      };
+      ws.onclose = () => {
+        document.getElementById('ws-dot').classList.remove('live');
+        document.getElementById('ws-label').textContent = 'DISCONNECTED';
+        setTimeout(connect, 3000);
+      };
+      ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
+    }
+
+    function handleMsg(msg) {
+      switch (msg.type) {
+        case 'tick':
+          handleTick(msg.data, msg.total_ticks);
+          if (velocityBot.active) processVelocityBot(msg.data, msg.total_ticks);
+          break;
+        case 'prediction':
+          handlePrediction(msg.data);
+          break;
+        case 'trade_opened':
+          handleTradeOpened(msg);
+          break;
+        case 'trade_update':
+          handleTradeUpdate(msg);
+          break;
+        case 'training_progress':
+          document.getElementById('signal-conf').textContent =
+            `Training… ${msg.tick_count}/500 ticks`;
+          break;
+        case 'trade_blocked':
+          addAlert('INFO', 'Trade blocked: ' + msg.reason);
+          break;
+      }
+    }
+
+    // ── Handlers ──────────────────────────────────────────────────────
+    function handleTick(tick, total) {
+      totalTicks = total;
+      const price = Number(tick.quote).toFixed(2);
+      document.getElementById('price-label').textContent = price;
+      document.getElementById('symbol-label').textContent = tick.symbol || '';
+      document.getElementById('stat-ticks').textContent = total;
+
+      const t = new Date(tick.timestamp * 1000).toLocaleTimeString();
+      pushChart(priceChart, t, tick.quote);
+    }
+
+    function handlePrediction(pred) {
+      totalPredictions++;
+      document.getElementById('stat-preds').textContent = totalPredictions;
+
+      const decision = pred.final_decision || 'SKIP';
+      const conf = ((pred.confidence || 0) * 100).toFixed(1);
+      const lstmP = (pred.lstm_prob || 0.5) * 100;
+      const treeP = (pred.tree_prob || 0.5) * 100;
+
+      // Signal box
+      const box = document.getElementById('signal-box');
+      box.className = 'signal-box ' + decision;
+      document.getElementById('signal-text').textContent =
+        decision === 'BUY' ? 'BUY ▲' : decision === 'SELL' ? 'SELL ▼' : 'WAIT';
+      document.getElementById('signal-conf').textContent = `Confidence: ${conf}%`;
+
+      // Model bars
+      document.getElementById('lstm-pct').textContent = lstmP.toFixed(1) + '%';
+      document.getElementById('tree-pct').textContent = treeP.toFixed(1) + '%';
+      document.getElementById('lstm-bar').style.width = lstmP + '%';
+      document.getElementById('tree-bar').style.width = treeP + '%';
+
+      // Risk info
+      document.getElementById('stat-kelly').textContent =
+        pred.kelly_pct ? (pred.kelly_pct * 100).toFixed(2) + '%' : '--';
+      const regimes = ['RANGING', 'TRENDING', 'HIGH-VOL'];
+      document.getElementById('stat-regime').textContent =
+        regimes[pred.market_regime] || '--';
+      const vols = ['LOW', 'MEDIUM', 'HIGH'];
+      document.getElementById('stat-vol').textContent =
+        vols[pred.vol_regime] || '--';
+    }
+
+    function handleTradeOpened(msg) {
+      sessionTrades++;
+      document.getElementById('stat-trades').textContent = sessionTrades;
+      document.getElementById('stat-open').textContent = 1;
+      addTradeRow({ direction: msg.direction, stake: msg.stake, status: 'OPEN', profit: null });
+    }
+
+    function handleTradeUpdate(msg) {
+      if (msg.status === 'WON' || msg.status === 'LOST') {
+        document.getElementById('stat-open').textContent = 0;
+        const profit = msg.profit || 0;
+        sessionPnl += profit;
+        if (profit > 0) sessionWins++;
+
+        const wr = sessionTrades > 0 ? (sessionWins / sessionTrades * 100).toFixed(1) : '--';
+        document.getElementById('stat-wr').textContent = wr + '%';
+        document.getElementById('stat-wr').className = 'kv-val ' + (sessionWins / sessionTrades > 0.5 ? 'green' : 'red');
+        document.getElementById('stat-pnl').textContent = '$' + sessionPnl.toFixed(2);
+        document.getElementById('stat-pnl').className = 'kv-val ' + (sessionPnl >= 0 ? 'green' : 'red');
+
+        sessionBalance += profit;
+        pushChart(equityChart, '', sessionBalance);
+
+        // Velocity Bot Session Stats
+        if (velocityBot.active) {
+          velocityBot.pnl += profit;
+          document.getElementById('bot-pnl').textContent = (velocityBot.pnl >= 0 ? '+' : '') + '$' + velocityBot.pnl.toFixed(2);
+          document.getElementById('bot-pnl').className = 'kv-val ' + (velocityBot.pnl >= 0 ? 'green' : 'red');
+        }
+
+        addTradeRow({ direction: msg.direction, stake: '--', status: msg.status, profit });
+      }
+    }
+
+    // ── Trade list ────────────────────────────────────────────────────
+    const tradeRows = [];
+    function addTradeRow(t) {
+      tradeRows.unshift(t);
+      if (tradeRows.length > 15) tradeRows.pop();
+      renderTrades();
+    }
+    function renderTrades() {
+      const el = document.getElementById('trades-list');
+      el.innerHTML = tradeRows.map(t => `
+    <div class="trade-item">
+      <span class="trade-dir ${t.direction}">${t.direction}</span>
+      <div class="trade-info">
+        <div>${t.status}</div>
+        <div style="color:var(--muted)">${t.stake !== '--' ? '$' + Number(t.stake).toFixed(2) : ''}</div>
+      </div>
+      <span class="trade-pnl ${t.profit > 0 ? 'green' : t.profit < 0 ? 'red' : ''}">
+        ${t.profit !== null ? (t.profit > 0 ? '+' : '') + '$' + Number(t.profit).toFixed(2) : '…'}
+      </span>
+    </div>
+  `).join('');
+    }
+
+    // ── Alerts ────────────────────────────────────────────────────────
+    const alertRows = [];
+    function addAlert(level, msg) {
+      alertRows.unshift({ level, msg, ts: new Date().toLocaleTimeString() });
+      if (alertRows.length > 10) alertRows.pop();
+      renderAlerts();
+    }
+    function renderAlerts() {
+      const el = document.getElementById('alerts-list');
+      el.innerHTML = alertRows.map(a => `
+    <div class="alert-item alert-${a.level}">
+      <span style="color:var(--muted)">${a.ts}</span> ${a.msg}
+    </div>
+  `).join('');
+    }
+
+    // ── Controls ──────────────────────────────────────────────────────
+    async function toggleAuto() {
+      autoTradeOn = !autoTradeOn;
+      const badge = document.getElementById('auto-badge');
+      badge.textContent = autoTradeOn ? 'AUTO' : 'PAPER';
+      badge.className = 'badge ' + (autoTradeOn ? 'badge-auto' : 'badge-paper');
+      try {
+        await fetch(`/api/auto_trade/toggle?enabled=${autoTradeOn}`, { method: 'POST', headers });
+      } catch (e) { console.error(e); }
+    }
+
+    async function forceRetrain() {
+      try {
+        await fetch('/api/retrain', { method: 'POST', headers });
+        addAlert('INFO', 'Retrain triggered');
+      } catch (e) { addAlert('WARNING', 'Retrain failed: ' + e.message); }
+    }
+
+    // ── Velocity Bot ──────────────────────────────────────────────────
+    function toggleVelocityBot() {
+      velocityBot.active = !velocityBot.active;
+      const btn = document.getElementById('velocity-btn');
+      btn.textContent = velocityBot.active ? 'STOP BOT' : 'START BOT';
+      btn.className = 'btn ' + (velocityBot.active ? 'btn-red' : 'btn-blue');
+      addAlert('INFO', 'Velocity Bot: ' + (velocityBot.active ? 'ENGAGED' : 'OFFLINE'));
+    }
+
+    async function processVelocityBot(tick, total) {
+      const freq = parseInt(document.getElementById('bot-freq').value) || 5;
+      if (total - velocityBot.lastTradeTick < freq) return;
+
+      velocityBot.lastTradeTick = total;
+      const mode = document.getElementById('bot-mode').value;
+      let direction = 'BUY';
+
+      if (mode === 'ALT') direction = velocityBot.lastDirection === 'BUY' ? 'SELL' : 'BUY';
+      else if (mode === 'BUY') direction = 'BUY';
+      else if (mode === 'SELL') direction = 'SELL';
+      else if (mode === 'TREND') {
+        // Simple momentum check from prev tick (assumes we have history)
+        direction = tick.quote > (velocityBot.lastQuote || 0) ? 'BUY' : 'SELL';
+      }
+
+      velocityBot.lastQuote = tick.quote;
+      velocityBot.lastDirection = direction;
+      velocityBot.total++;
+      document.getElementById('bot-cycles').textContent = velocityBot.total;
+
+      try {
+        await fetch('/api/trade/manual', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction, stake: 1.0 })
         });
+      } catch (e) { }
+    }
 
-        // State
-        let ticksArray = [];
-        const MAX_POINTS = 100;
-
-        // WebSocket Handlers
-        socket.onopen = () => {
-            document.getElementById('connection-status').classList.add('connected');
-            document.getElementById('status-text').innerText = 'Online';
-        };
-
-        socket.onclose = () => {
-            document.getElementById('connection-status').classList.remove('connected');
-            document.getElementById('status-text').innerText = 'Disconnected';
-        };
-
-        socket.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-
-            if (msg.type === 'tick') {
-                updateChart(msg.data);
-                document.getElementById('current-price').innerText = msg.data.quote.toFixed(2);
-                document.getElementById('tick-count').innerText = msg.total_ticks;
-            }
-            else if (msg.type === 'prediction') {
-                updateSignal(msg.data);
-            }
-        };
-
-        function updateChart(tick) {
-            ticksArray.push(tick);
-            if (ticksArray.length > MAX_POINTS) ticksArray.shift();
-
-            chart.data.labels = ticksArray.map(t => new Date(t.timestamp * 1000).toLocaleTimeString());
-            chart.data.datasets[0].data = ticksArray.map(t => t.quote);
-            chart.update();
+    async function fetchPerf() {
+      try {
+        const r = await fetch('/api/performance', { headers });
+        const d = await r.json();
+        if (d.win_rate !== undefined) {
+          document.getElementById('stat-wr').textContent = (d.win_rate * 100).toFixed(1) + '%';
+          document.getElementById('stat-pnl').textContent = '$' + (d.net_profit || 0).toFixed(2);
         }
-
-        function updateSignal(pred) {
-            const box = document.getElementById('signal-box');
-            const text = document.getElementById('signal-text');
-            const conf = document.getElementById('confidence-text');
-            const engineMsg = document.getElementById('engine-message');
-
-            const decision = pred.final_decision || 'SKIP';
-            const confidence = (pred.confidence * 100).toFixed(1);
-
-            // Update Class
-            box.className = 'signal-box';
-            if (decision === 'UP' || decision === 'BUY') box.classList.add('UP');
-            else if (decision === 'DOWN' || decision === 'SELL') box.classList.add('DOWN');
-            else box.classList.add('SKIP');
-
-            // Update Text
-            if (decision === 'UP' || decision === 'BUY') text.innerText = 'BUY ▲';
-            else if (decision === 'DOWN' || decision === 'SELL') text.innerText = 'SELL ▼';
-            else text.innerText = 'WAIT';
-
-            conf.innerText = `Confidence: ${confidence}%`;
-
-            // Update Kelly & Regime
-            document.getElementById('kelly-size').innerText =
-                pred.kelly_pct ? (pred.kelly_pct * 100).toFixed(2) + '%' : '--';
-            document.getElementById('regime-status').innerText =
-                pred.regime_approved ? '✅ GO' : '⏸ WAIT';
-
-            // Update Engine Status
-            document.getElementById('pred-count').innerText = parseInt(document.getElementById('pred-count').innerText) + 1;
-
-            const lstm = (pred.lstm_prob * 100).toFixed(0);
-            const tree = (pred.tree_prob * 100).toFixed(0);
-
-            engineMsg.innerHTML = `
-                <strong>AI Analysis:</strong><br>
-                LSTM Model: ${lstm}% Bullish<br>
-                Tree Model: ${tree}% Bullish<br>
-                Combined: ${(pred.combined_prob * 100).toFixed(1)}%
-            `;
+        // Drawdown from metrics
+        const r2 = await fetch('/api/metrics', { headers }).catch(() => null);
+        if (r2) {
+          const m = await r2.json();
+          const dd = ((m.trades?.max_dd || 0) * 100).toFixed(1);
+          document.getElementById('stat-dd').textContent = dd + '%';
+          document.getElementById('stat-dd').className = 'kv-val ' + (parseFloat(dd) > 5 ? 'red' : 'green');
         }
+      } catch (e) { }
+    }
 
-        // Ping to keep alive
-        setInterval(() => {
-            if (socket.readyState === WebSocket.OPEN) socket.send('ping');
-        }, 5000);
+    // ── Heartbeat ─────────────────────────────────────────────────────
+    setInterval(() => { if (ws?.readyState === 1) ws.send('ping'); }, 5000);
+    setInterval(fetchPerf, 30000);
 
-    </script>
+    // ── Boot ──────────────────────────────────────────────────────────
+    connect();
+    fetchPerf();
+  </script>
 </body>
 
 </html>

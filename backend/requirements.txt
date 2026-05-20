@@ -11,6 +11,8 @@ httpx>=0.25.0
 
 # Async support
 aiofiles>=23.2.0
+aiosqlite>=0.19.0
+python-dotenv>=1.0.0
 
 # Already in main requirements.txt:
 # - pandas

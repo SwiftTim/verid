@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity // Deriv AutoTrader</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #05070a;
+            --surface: rgba(13, 17, 23, 0.8);
+            --surface-solid: #0d1117;
+            --border: rgba(56, 139, 253, 0.15);
+            --border-bright: rgba(56, 139, 253, 0.4);
+            --text: #e6edf3;
+            --muted: #7d8590;
+            --green: #238636;
+            --green-glow: #3fb950;
+            --red: #da3633;
+            --red-glow: #f85149;
+            --blue: #2f81f7;
+            --blue-glow: #58a6ff;
+            --cyan: #39d0d8;
+            --purple: #8957e5;
+            --glass: blur(12px) saturate(180%);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle at 50% 0%, rgba(56, 139, 253, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(137, 87, 229, 0.05) 0%, transparent 40%);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ─────────────────────────────────────────────────── */
+        header {
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            background: var(--surface);
+            backdrop-filter: var(--glass);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 18px;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo .brand {
+            color: var(--cyan);
+            text-shadow: 0 0 15px rgba(57, 208, 216, 0.4);
+        }
+
+        .logo .sub {
+            color: var(--muted);
+            font-weight: 300;
+            font-size: 14px;
+        }
+
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 4px 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 10px var(--red);
+            transition: all 0.3s;
+        }
+
+        .dot.online {
+            background: var(--green-glow);
+            box-shadow: 0 0 12px var(--green-glow);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 0.7;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* ── Main Layout ─────────────────────────────────────────────── */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 320px 1fr 340px;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: rgba(13, 17, 23, 0.4);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .right-sidebar {
+            border-right: none;
+            border-left: 1px solid var(--border);
+        }
+
+        /* ── Components ─────────────────────────────────────────────── */
+        .section {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--muted);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Signal Card */
+        .signal-card {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 30px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .signal-card.BUY {
+            border-color: var(--green-glow);
+            box-shadow: 0 0 30px rgba(63, 185, 80, 0.15);
+        }
+
+        .signal-card.SELL {
+            border-color: var(--red-glow);
+            box-shadow: 0 0 30px rgba(248, 81, 73, 0.15);
+        }
+
+        .signal-main {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 42px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .BUY .signal-main {
+            color: var(--green-glow);
+            text-shadow: 0 0 20px rgba(63, 185, 80, 0.4);
+        }
+
+        .SELL .signal-main {
+            color: var(--red-glow);
+            text-shadow: 0 0 20px rgba(248, 81, 73, 0.4);
+        }
+
+        .signal-sub {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 400;
+        }
+
+        /* Data Rows */
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .data-label {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .data-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .data-value.up {
+            color: var(--green-glow);
+        }
+
+        .data-value.down {
+            color: var(--red-glow);
+        }
+
+        /* Progress Bars */
+        .progress-wrap {
+            margin-bottom: 18px;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .progress-track {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 50%;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ── Center Content ────────────────────────────────────────── */
+        .content {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        .viz-card {
+            background: var(--surface-solid);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .viz-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .viz-title {
+            font-weight: 600;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .viz-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            color: var(--cyan);
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* ── Right Panel ───────────────────────────────────────────── */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-card .label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .stat-card .val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: rgba(56, 139, 253, 0.1);
+            border-color: var(--blue-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-accent {
+            background: var(--blue);
+            border-color: var(--blue-glow);
+            color: white;
+            box-shadow: 0 4px 15px rgba(47, 129, 247, 0.2);
+        }
+
+        .btn-accent:hover {
+            background: var(--blue-glow);
+            box-shadow: 0 6px 20px rgba(47, 129, 247, 0.3);
+        }
+
+        .btn-accent.off {
+            background: #21262d;
+            border-color: #30363d;
+            box-shadow: none;
+        }
+
+        /* List Items */
+        .list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .list-container::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .list-container::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .trade-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            border: 1px solid transparent;
+        }
+
+        .trade-item:hover {
+            border-color: var(--border);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .trade-marker {
+            width: 4px;
+            height: 24px;
+            border-radius: 2px;
+            margin-right: 12px;
+        }
+
+        .trade-marker.BUY {
+            background: var(--green-glow);
+            box-shadow: 0 0 10px var(--green-glow);
+        }
+
+        .trade-marker.SELL {
+            background: var(--red-glow);
+            box-shadow: 0 0 10px var(--red-glow);
+        }
+
+        .trade-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .trade-title {
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .trade-meta {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .trade-pnl {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        /* Overlay for connection */
+        #conn-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.4s;
+        }
+
+        #conn-overlay.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .conn-box {
+            background: var(--surface-solid);
+            border: 1px solid var(--border-bright);
+            padding: 40px;
+            border-radius: 20px;
+            width: 400px;
+            text-align: center;
+        }
+
+        .conn-box input {
+            width: 100%;
+            padding: 12px;
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: white;
+            margin: 20px 0;
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="conn-overlay">
+        <div class="conn-box">
+            <h2 style="margin-bottom:10px">Link Environment</h2>
+            <p style="color:var(--muted); font-size:14px">Enter your Backend URL to establish the handshake.</p>
+            <input type="text" id="backend-url-input" placeholder="http://localhost:8000">
+            <button class="btn btn-accent" onclick="manualConnect()">Connect Stream</button>
+        </div>
+    </div>
+
+    <header>
+        <div class="logo">
+            <span class="brand">ANTIGRAVITY</span>
+            <span class="sub">HYBRID PREDICTOR v2.0</span>
+        </div>
+        <div class="status-group">
+            <div class="conn-status">
+                <span class="dot" id="ws-dot"></span>
+                <span id="ws-text">STREAMS STANDBY</span>
+            </div>
+            <div id="price-main" class="viz-val" style="font-size:24px; width:120px; text-align:right">-.----</div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="section">
+                <div class="section-title">Market Intel</div>
+                <div class="signal-card SKIP" id="signal-card">
+                    <div class="signal-main" id="signal-text">WAIT</div>
+                    <div class="signal-sub" id="signal-desc">Synchronizing buffers...</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Neural Ensembles</div>
+                <div class="progress-wrap">
+                    <div class="progress-label"><span>LSTM Recurrent</span><span id="lstm-val">--</span></div>
+                    <div class="progress-track">
+                        <div id="lstm-fill" class="progress-fill" style="background:var(--blue-glow); width:0%"></div>
+                    </div>
+                </div>
+                <div class="progress-wrap">
+                    <div class="progress-label"><span>Decision Tree</span><span id="tree-val">--</span></div>
+                    <div class="progress-track">
+                        <div id="tree-fill" class="progress-fill" style="background:var(--purple); width:0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Portfolio DNA</div>
+                <div class="data-row"><span class="data-label">Market Regime</span><span class="data-value blue"
+                        id="regime-val">--</span></div>
+                <div class="data-row"><span class="data-label">Volatility</span><span class="data-value"
+                        id="vol-val">--</span></div>
+                <div class="data-row"><span class="data-label">Kelly Criterion</span><span class="data-value"
+                        id="kelly-val">--</span></div>
+            </div>
+
+            <div class="section" style="border-bottom:none">
+                <div class="section-title">Manual Tactical Entry</div>
+                <div style="display:flex; gap:10px; margin-bottom:15px">
+                    <input type="number" id="manual-stake" value="1.0" step="1"
+                        style="width:100%; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; color:white; padding:8px; text-align:center; font-family:'JetBrains Mono'">
+                </div>
+                <div style="display:flex; gap:10px">
+                    <button class="btn" onclick="manualTrade('BUY')"
+                        style="border-color:var(--green-glow); color:var(--green-glow); flex:1">BUY ▲</button>
+                    <button class="btn" onclick="manualTrade('SELL')"
+                        style="border-color:var(--red-glow); color:var(--red-glow); flex:1">SELL ▼</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Content Area -->
+        <div class="content">
+            <!-- Velocity Bot Header -->
+            <div class="viz-card"
+                style="flex: 0.4; min-height: 180px; border-color: var(--cyan); background: linear-gradient(180deg, rgba(57, 208, 216, 0.05) 0%, transparent 100%);">
+                <div class="viz-header">
+                    <div class="viz-title" style="color: var(--cyan)">Velocity Execution Core</div>
+                    <div class="status-group">
+                        <div id="bot-status-tag" class="conn-status"
+                            style="border-color: var(--muted); color: var(--muted)">
+                            <span class="dot" id="bot-dot" style="background: var(--muted); box-shadow: none"></span>
+                            <span id="bot-status-text">OFFLINE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <div class="stat-card" style="background: rgba(57, 208, 216, 0.03)">
+                        <div class="label">Bot P&L</div>
+                        <div id="bot-pnl" class="val" style="color: var(--text)">$0.00</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(57, 208, 216, 0.03)">
+                        <div class="label">Bot Win Rate</div>
+                        <div id="bot-wr" class="val" style="color: var(--text)">0%</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(57, 208, 216, 0.03)">
+                        <div class="label">Cycle Count</div>
+                        <div id="bot-cycles" class="val" style="color: var(--text)">0</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <div style="flex: 1">
+                        <label
+                            style="font-size: 10px; color: var(--muted); text-transform: uppercase; display: block; margin-bottom: 5px;">Frequency
+                            (Ticks)</label>
+                        <input type="number" id="bot-freq" value="5" min="1" max="50"
+                            style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px; color: white; padding: 5px 10px; font-family: 'JetBrains Mono'">
+                    </div>
+                    <div style="flex: 1">
+                        <label
+                            style="font-size: 10px; color: var(--muted); text-transform: uppercase; display: block; margin-bottom: 5px;">Mode</label>
+                        <select id="bot-mode"
+                            style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px; color: white; padding: 5px 10px; font-family: 'Outfit'">
+                            <option value="TREND">Trend Follow</option>
+                            <option value="ALT">Alternating</option>
+                            <option value="BUY">Only Buy</option>
+                            <option value="SELL">Only Sell</option>
+                        </select>
+                    </div>
+                    <button id="velocity-btn" onclick="toggleVelocityBot()" class="btn btn-accent"
+                        style="flex: 1.5; margin-bottom: 0; background: var(--cyan); border-color: var(--cyan); color: var(--bg);">
+                        START VELOCITY BOT
+                    </button>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div style="display: flex; flex: 1; gap: 20px; overflow: hidden;">
+                <div class="viz-card" style="flex: 1">
+                    <div class="viz-header">
+                        <div class="viz-title">Tick Stream Analysis <span id="active-symbol"
+                                style="color:var(--text); margin-left:10px"></span></div>
+                        <div class="viz-val" id="price-viz">-.----</div>
+                    </div>
+                    <canvas id="priceChart"></canvas>
+                </div>
+                <div class="viz-card" style="flex: 0.6">
+                    <div class="viz-header">
+                        <div class="viz-title">Compounding Equity Curve</div>
+                        <div class="viz-val" id="equity-viz">$100.00</div>
+                    </div>
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar right-sidebar">
+            <div class="section">
+                <div class="section-title">Terminal State</div>
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div class="label">Balance</div>
+                        <div class="val" id="stat-bal">$100.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Win Rate</div>
+                        <div class="val" id="stat-wr">--%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Ticks</div>
+                        <div class="val" id="stat-ticks">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Total P&L</div>
+                        <div class="val" id="stat-pnl">$0.00</div>
+                    </div>
+                </div>
+
+                <button id="auto-btn" class="btn btn-accent off" onclick="toggleAuto()">
+                    <span>OFF</span> AUTO-TRADE
+                </button>
+                <div style="display:flex; gap:10px">
+                    <button class="btn" onclick="forceRetrain()" style="flex:1">RE-SYCN ML</button>
+                    <button class="btn" onclick="refreshMetrics()" style="flex:1">METRICS</button>
+                </div>
+            </div>
+
+            <div class="section" style="flex:1; display:flex; flex-direction:column; min-height:0">
+                <div class="section-title">Recent Activity</div>
+                <div class="list-container" id="trade-list">
+                    <div style="text-align:center; padding:20px; color:var(--muted); font-size:12px">Waiting for engine
+                        execution...</div>
+                </div>
+            </div>
+
+            <div class="section" style="height:180px; border-bottom:none">
+                <div class="section-title">Network Events</div>
+                <div class="list-container" id="event-list"
+                    style="font-family:'JetBrains Mono', monospace; font-size:10px"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let config = {
+            backendUrl: localStorage.getItem('backendUrl') || (window.location.port == '8000' ? window.location.origin : 'http://localhost:8000'),
+            apiKey: (new URLSearchParams(location.search)).get('key') || '',
+            maxPriceTicks: 150
+        };
+
+        let state = {
+            priceHistory: [],
+            equityHistory: [100.0],
+            isAutoTrading: false,
+            totalTicks: 0,
+            balance: 100.0
+        };
+
+        let velocityBot = {
+            active: false,
+            lastTradeTick: 0,
+            pnl: 0,
+            wins: 0,
+            total: 0,
+            lastDirection: 'SELL'
+        };
+
+        // ── Charts ──────────────────────────────────────────────────────────
+        const createGradient = (ctx, color) => {
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, color + '44');
+            gradient.addColorStop(1, color + '00');
+            return gradient;
+        };
+
+        const getChartConfig = (label, color, fill = true) => ({
+            type: 'line',
+            data: {
+                labels: Array(config.maxPriceTicks).fill(''), datasets: [{
+                    label, data: [], borderColor: color,
+                    borderWidth: 2, pointRadius: 0, tension: 0.4,
+                    fill: fill, backgroundColor: (context) => {
+                        const chart = context.chart;
+                        const { ctx, chartArea } = chart;
+                        if (!chartArea) return null;
+                        return createGradient(ctx, color);
+                    }
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#7d8590', font: { family: 'JetBrains Mono', size: 10 } },
+                        position: 'right'
+                    }
+                }
+            }
+        });
+
+        const priceCtx = document.getElementById('priceChart').getContext('2d');
+        const equityCtx = document.getElementById('equityChart').getContext('2d');
+
+        const priceChart = new Chart(priceCtx, getChartConfig('Price', '#39d0d8'));
+        const equityChart = new Chart(equityCtx, getChartConfig('Equity', '#238636'));
+
+        // ── Connection ──────────────────────────────────────────────────────
+        let ws;
+        function connect() {
+            const wsUrl = config.backendUrl.replace('http', 'ws') + '/ws';
+            console.log('Connecting to:', wsUrl);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('ws-dot').className = 'dot online';
+                document.getElementById('ws-text').innerText = 'STREAMS ACTIVE';
+                document.getElementById('conn-overlay').className = '';
+                addEvent('INFO', 'Handshake successful. Tick stream synchronized.');
+            };
+
+            ws.onclose = () => {
+                document.getElementById('ws-dot').className = 'dot';
+                document.getElementById('ws-text').innerText = 'RECONNECTING...';
+                document.getElementById('conn-overlay').className = 'visible';
+                setTimeout(connect, 2000);
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                handleMessage(msg);
+            };
+        }
+
+        function manualConnect() {
+            const val = document.getElementById('backend-url-input').value;
+            if (val) {
+                config.backendUrl = val.replace(/\/$/, "");
+                localStorage.setItem('backendUrl', config.backendUrl);
+                connect();
+            }
+        }
+
+        // ── Handlers ────────────────────────────────────────────────────────
+        function handleMessage(msg) {
+            if (msg.type === 'tick') {
+                updateTick(msg.data, msg.total_ticks);
+            } else if (msg.type === 'prediction') {
+                updatePrediction(msg.data);
+            } else if (msg.type === 'trade_opened') {
+                updateTradeOpened(msg);
+            } else if (msg.type === 'trade_update') {
+                updateTradeResult(msg);
+            } else if (msg.type === 'training_progress') {
+                document.getElementById('signal-desc').innerText = `Buffer: ${msg.tick_count}/500 ticks`;
+            }
+        }
+
+        function updateTick(tick, total) {
+            const val = Number(tick.quote).toFixed(4);
+            document.getElementById('price-main').innerText = val;
+            document.getElementById('price-viz').innerText = val;
+            document.getElementById('stat-ticks').innerText = total;
+            document.getElementById('active-symbol').innerText = `[${tick.symbol}]`;
+
+            state.priceHistory.push(tick.quote);
+            if (state.priceHistory.length > config.maxPriceTicks) state.priceHistory.shift();
+
+            priceChart.data.datasets[0].data = state.priceHistory;
+            priceChart.update('none');
+
+            // Bot processing
+            if (velocityBot.active) {
+                processVelocityBot(tick, total);
+            }
+        }
+
+        function updatePrediction(pred) {
+            const card = document.getElementById('signal-card');
+            const text = document.getElementById('signal-text');
+            const desc = document.getElementById('signal-desc');
+
+            card.className = `signal-card ${pred.final_decision}`;
+            text.innerText = pred.final_decision === 'BUY' ? 'BUY ▲' : pred.final_decision === 'SELL' ? 'SELL ▼' : 'WAIT';
+            desc.innerText = `Conf: ${(pred.confidence * 100).toFixed(1)}% | E: ${pred.entropy?.toFixed(2) || '0'}`;
+
+            // Prob bars
+            document.getElementById('lstm-val').innerText = (pred.lstm_prob * 100).toFixed(1) + '%';
+            document.getElementById('tree-val').innerText = (pred.tree_prob * 100).toFixed(1) + '%';
+            document.getElementById('lstm-fill').style.width = (pred.lstm_prob * 100) + '%';
+            document.getElementById('tree-fill').style.width = (pred.tree_prob * 100) + '%';
+
+            // Regimes
+            const regimes = ['RANGING', 'TRENDING', 'VOLATILE'];
+            document.getElementById('regime-val').innerText = regimes[pred.market_regime] || 'SEARCHING';
+            const volLabels = ['LOW', 'NEUTRAL', 'CRITICAL'];
+            document.getElementById('vol-val').innerText = volLabels[pred.vol_regime] || '--';
+            document.getElementById('vol-val').className = `data-value ${pred.vol_regime == 2 ? 'red' : ''}`;
+            document.getElementById('kelly-val').innerText = pred.kelly_pct ? (pred.kelly_pct * 100).toFixed(2) + '%' : '--';
+        }
+
+        let trades = [];
+        function updateTradeOpened(msg) {
+            addEvent('INFO', `Order Executed: ${msg.direction} @ $${msg.stake}`);
+            const trade = {
+                id: msg.trade_id,
+                direction: msg.direction,
+                stake: msg.stake,
+                status: 'OPEN',
+                profit: 0
+            };
+            trades.unshift(trade);
+            renderTrades();
+        }
+
+        function updateTradeResult(msg) {
+            const trade = trades.find(t => t.id === msg.trade_id);
+            if (trade) {
+                trade.status = msg.status;
+                trade.profit = msg.profit;
+                state.balance += msg.profit;
+                state.equityHistory.push(state.balance);
+
+                document.getElementById('equity-viz').innerText = `$${state.balance.toFixed(2)}`;
+                document.getElementById('stat-bal').innerText = `$${state.balance.toFixed(2)}`;
+
+                // Bot Stats Update
+                if (velocityBot.active) {
+                    velocityBot.pnl += msg.profit;
+                    if (msg.status === 'WON') velocityBot.wins++;
+                    
+                    document.getElementById('bot-pnl').innerText = (velocityBot.pnl >= 0 ? '+' : '') + '$' + velocityBot.pnl.toFixed(2);
+                    document.getElementById('bot-pnl').style.color = velocityBot.pnl >= 0 ? 'var(--green-glow)' : 'var(--red-glow)';
+                    
+                    const wr = (velocityBot.wins / velocityBot.total * 100).toFixed(1);
+                    document.getElementById('bot-wr').innerText = wr + '%';
+                }
+
+                // Calculate win rate
+                const settled = trades.filter(t => t.status === 'WON' || t.status === 'LOST');
+                const wins = settled.filter(t => t.status === 'WON').length;
+                document.getElementById('stat-wr').innerText = settled.length ? ((wins / settled.length) * 100).toFixed(1) + '%' : '--%';
+
+                const pnl = trades.reduce((acc, t) => acc + (t.profit || 0), 0);
+                document.getElementById('stat-pnl').innerText = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+                document.getElementById('stat-pnl').className = `val ${pnl >= 0 ? 'green' : 'red'}`;
+
+                equityChart.data.labels.push('');
+                equityChart.data.datasets[0].data = state.equityHistory;
+                equityChart.update();
+
+                renderTrades();
+                addEvent(msg.status === 'WON' ? 'INFO' : 'WARNING', `Settled: ${msg.status} ($${msg.profit.toFixed(2)})`);
+            }
+        }
+
+        function renderTrades() {
+            const list = document.getElementById('trade-list');
+            if (trades.length === 0) return;
+            list.innerHTML = trades.map(t => `
+      <div class="trade-item">
+        <div class="trade-marker ${t.direction}"></div>
+        <div class="trade-body">
+          <div class="trade-title">${t.direction} Order</div>
+          <div class="trade-meta">${t.status} | Stake $${t.stake}</div>
+        </div>
+        <div class="trade-pnl ${t.profit > 0 ? 'up' : t.profit < 0 ? 'down' : ''}">
+          ${t.status === 'OPEN' ? '...' : (t.profit >= 0 ? '+' : '') + t.profit.toFixed(2)}
+        </div>
+      </div>
+    `).join('');
+        }
+
+        function addEvent(level, msg) {
+            const list = document.getElementById('event-list');
+            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const div = document.createElement('div');
+            div.style.marginBottom = '4px';
+            div.innerHTML = `<span style="color:var(--muted)">[${time}]</span> <span class="${level.toLowerCase()}">${msg}</span>`;
+            list.prepend(div);
+            if (list.children.length > 20) list.lastChild.remove();
+        }
+
+        // ── Actions ─────────────────────────────────────────────────────────
+        async function toggleAuto() {
+            state.isAutoTrading = !state.isAutoTrading;
+            const btn = document.getElementById('auto-btn');
+            btn.className = `btn btn-accent ${state.isAutoTrading ? '' : 'off'}`;
+            btn.querySelector('span').innerText = state.isAutoTrading ? 'ON' : 'OFF';
+
+            try {
+                await fetch(`${config.backendUrl}/api/auto_trade/toggle?enabled=${state.isAutoTrading}`, {
+                    method: 'POST',
+                    headers: { 'X-API-Key': config.apiKey }
+                });
+                addEvent('INFO', `Auto-Trade sequence: ${state.isAutoTrading ? 'ENAGED' : 'DISENGAGED'}`);
+            } catch (e) { console.error('Toggle failed', e); }
+        }
+
+        async function forceRetrain() {
+            try {
+                addEvent('INFO', 'Requesting neural re-sync...');
+                await fetch(`${config.backendUrl}/api/retrain`, {
+                    method: 'POST',
+                    headers: { 'X-API-Key': config.apiKey }
+                });
+            } catch (e) { addEvent('CRITICAL', 'Neural re-sync failed'); }
+        }
+
+        async function manualTrade(direction) {
+            const stake = parseFloat(document.getElementById('manual-stake').value);
+            try {
+                addEvent('INFO', `Requesting manual ${direction} @ $${stake}...`);
+                await fetch(`${config.backendUrl}/api/trade/manual`, {
+                    method: 'POST',
+                    headers: { 'X-API-Key': config.apiKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction, stake })
+                });
+            } catch (e) { addEvent('CRITICAL', 'Manual entry failed: ' + e.message); }
+        }
+
+        // ── Velocity Bot Functions ──────────────────────────────────────────
+        function toggleVelocityBot() {
+            velocityBot.active = !velocityBot.active;
+            const btn = document.getElementById('velocity-btn');
+            const dot = document.getElementById('bot-dot');
+            const tag = document.getElementById('bot-status-tag');
+            const text = document.getElementById('bot-status-text');
+
+            if (velocityBot.active) {
+                btn.innerText = 'STOP VELOCITY BOT';
+                btn.className = 'btn btn-accent';
+                btn.style.background = 'var(--red)';
+                btn.style.borderColor = 'var(--red)';
+                dot.style.background = 'var(--cyan)';
+                dot.className = 'dot online';
+                tag.style.borderColor = 'var(--cyan)';
+                text.innerText = 'AUTO-EXECUTING';
+                addEvent('INFO', 'Velocity Bot: HIGHSPEED CORE ENGAGED');
+            } else {
+                btn.innerText = 'START VELOCITY BOT';
+                btn.className = 'btn btn-accent';
+                btn.style.background = 'var(--cyan)';
+                btn.style.borderColor = 'var(--cyan)';
+                dot.style.background = 'var(--muted)';
+                dot.className = 'dot';
+                tag.style.borderColor = 'var(--muted)';
+                text.innerText = 'OFFLINE';
+                addEvent('WARNING', 'Velocity Bot: CORE DISENGAGED');
+            }
+        }
+
+        async function processVelocityBot(tick, total) {
+            const freq = parseInt(document.getElementById('bot-freq').value) || 5;
+            if (total - velocityBot.lastTradeTick < freq) return;
+
+            velocityBot.lastTradeTick = total;
+            const mode = document.getElementById('bot-mode').value;
+            let direction = 'BUY';
+
+            if (mode === 'ALT') {
+                direction = velocityBot.lastDirection === 'BUY' ? 'SELL' : 'BUY';
+            } else if (mode === 'BUY') {
+                direction = 'BUY';
+            } else if (mode === 'SELL') {
+                direction = 'SELL';
+            } else if (mode === 'TREND') {
+                const history = state.priceHistory;
+                if (history.length > 2) {
+                    direction = history[history.length - 1] > history[history.length - 2] ? 'BUY' : 'SELL';
+                }
+            }
+
+            velocityBot.lastDirection = direction;
+            const stake = parseFloat(document.getElementById('manual-stake').value);
+
+            try {
+                velocityBot.total++;
+                document.getElementById('bot-cycles').innerText = velocityBot.total;
+                
+                await fetch(`${config.backendUrl}/api/trade/manual`, {
+                    method: 'POST',
+                    headers: { 'X-API-Key': config.apiKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction, stake })
+                });
+            } catch (e) {
+                addEvent('CRITICAL', 'Bot trade failed');
+            }
+        }
+
+        async function refreshMetrics() {
+            // Basic logic to refresh UI components from API
+            addEvent('INFO', 'Refreshing metrics DNA...');
+        }
+
+        // Start heartbeat
+        setInterval(() => { if (ws?.readyState === 1) ws.send('ping'); }, 5000);
+
+        // Initialize
+        if (config.backendUrl) connect();
+        else document.getElementById('conn-overlay').className = 'visible';
+
+    </script>
+</body>
+
+</html>

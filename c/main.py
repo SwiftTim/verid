@@ -41,7 +41,7 @@ logger = logging.getLogger("deriv.main")
 # ─────────────────────────────────────────────
 # Config — override via environment variables
 # ─────────────────────────────────────────────
-COLAB_URL              = os.getenv("COLAB_URL", "https://guam-attributes-lie-equality.trycloudflare.com")
+COLAB_URL              = os.getenv("COLAB_URL", "https://a8ee-34-87-27-170.ngrok-free.app")
 DERIV_API_TOKEN        = os.getenv("DERIV_API_TOKEN", "")          # real-money token
 DERIV_APP_ID           = os.getenv("DERIV_APP_ID", "1089")
 DERIV_SYMBOL           = os.getenv("DERIV_SYMBOL", "1HZ100V")
