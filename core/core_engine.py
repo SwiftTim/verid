@@ -132,8 +132,7 @@ class HybridEngine:
             'samples_trained': len(X_train),
             'samples_tested': len(X_test),
             'lstm_accuracy': lstm_eval['accuracy'],
-            'tree_accuracy': tree_eval['accuracy'],
-            'tree_depth': tree_info['tree_depth']
+            'tree_accuracy': tree_eval['accuracy']
         }
         
         print(f"✅ Initial training complete in {elapsed:.2f}s")
