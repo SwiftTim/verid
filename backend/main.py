@@ -41,7 +41,7 @@ logger = logging.getLogger("deriv.main")
 # ─────────────────────────────────────────────
 # Config — override via environment variables
 # ─────────────────────────────────────────────
-COLAB_URL              = os.getenv("COLAB_URL", "https://supply-paxil-demo-mounting.trycloudflare.com")
+COLAB_URL              = os.getenv("COLAB_URL", "https://specialists-comm-knife-because.trycloudflare.com")
 DERIV_API_TOKEN        = os.getenv("DERIV_API_TOKEN", "pat_c493adf4cbbab38b6bb677308c26df1715d40d54ead2fdfda4b33c6167445a6d")
 DERIV_APP_ID           = os.getenv("DERIV_APP_ID", "33k5VK8DBmgx4PmY9BKVB")
 DERIV_ACCOUNT_ID       = os.getenv("DERIV_ACCOUNT_ID", "DOT92180896")   # Demo account

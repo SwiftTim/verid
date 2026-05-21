@@ -50,16 +50,23 @@ class EnsembleEngine:
         """
         Train a meta-learner (logistic regression) on top of base model outputs.
         """
-        from sklearn.linear_model import LogisticRegression
+        from xgboost import XGBClassifier
         import numpy as np
         
         X_meta = np.column_stack([lstm_probs, tree_probs,
                                    lstm_probs * tree_probs,           # interaction
                                    np.abs(lstm_probs - tree_probs)])  # disagreement
         
-        self.meta_learner = LogisticRegression(C=0.1, random_state=42)
+        self.meta_learner = XGBClassifier(
+            n_estimators=100,
+            max_depth=3,
+            learning_rate=0.03,
+            subsample=0.8,
+            random_state=42,
+            n_jobs=-1
+        )
         self.meta_learner.fit(X_meta, y_true)
-        print("✅ Meta-learner (stacking) trained")
+        print("✅ Meta-learner (XGBoost stacking) trained")
 
     def combine_with_meta(self, lstm_prob, tree_prob):
         """Use meta-learner if available, else fall back to weighted average."""
@@ -145,13 +152,28 @@ class EnsembleEngine:
         if vol_regime is not None and vol_regime >= 2:
             return "SKIP", 0.0        # high volatility regime → skip
 
+        # ── 6. DYNAMIC ENSEMBLE WEIGHTING (New) ────────────────────────
+        # Shift weights to whichever model is performing better recently
+        if len(self.accuracy_history) >= 2:
+            lstm_acc = self.get_model_specific_accuracy('lstm') or 0.5
+            tree_acc = self.get_model_specific_accuracy('tree') or 0.5
+            total_acc = lstm_acc + tree_acc
+            if total_acc > 0:
+                self.lstm_weight = lstm_acc / total_acc
+                self.tree_weight = tree_acc / total_acc
+
         confidence = abs(combined_prob - 0.5)
 
-        # ── 6. MINIMUM CONFIDENCE GATE ─────────────────────────────────
+        # ── 7. MINIMUM CONFIDENCE GATE ─────────────────────────────────
         if confidence < 0.06:
             return "SKIP", confidence
 
-        # ── 7. FINAL DECISION ──────────────────────────────────────────
+        # ── 8. DISAGREEMENT FILTER (Strict) ───────────────────────────
+        if lstm_prob is not None and tree_prob is not None:
+            if abs(lstm_prob - tree_prob) > 0.35:
+                return "SKIP", 0.0
+
+        # ── 9. FINAL DECISION ──────────────────────────────────────────
         if combined_prob > threshold:
             decision = "BUY"
         elif combined_prob < (1 - threshold):
@@ -218,21 +240,20 @@ class EnsembleEngine:
         self,
         combined_prob: float,
         decision: str,
-        actual_outcome: Optional[int] = None
+        actual_outcome: Optional[int] = None,
+        lstm_prob: Optional[float] = None,
+        tree_prob: Optional[float] = None
     ):
         """
         Log prediction for performance tracking
-        
-        Args:
-            combined_prob: The combined probability
-            decision: "BUY", "SELL", or "SKIP"
-            actual_outcome: Actual result (1=UP, 0=DOWN) if known
         """
         self.prediction_history.append({
             'probability': combined_prob,
             'decision': decision,
             'threshold': self.threshold,
-            'outcome': actual_outcome
+            'outcome': actual_outcome,
+            'lstm_prob': lstm_prob,
+            'tree_prob': tree_prob
         })
     
     def get_recent_accuracy(self, window: int = 200) -> float:
@@ -264,6 +285,22 @@ class EnsembleEngine:
         )
         
         return correct / len(executed)
+
+    def get_model_specific_accuracy(self, model_name: str, window: int = 100) -> Optional[float]:
+        """Calculate accuracy for a specific model (lstm or tree)"""
+        recent = [p for p in self.prediction_history if p.get('outcome') is not None][-window:]
+        if not recent: return None
+        
+        correct = 0
+        total = 0
+        for p in recent:
+            prob = p.get(f'{model_name}_prob')
+            if prob is None: continue
+            pred = 1 if prob > 0.5 else 0
+            if pred == p['outcome']:
+                correct += 1
+            total += 1
+        return correct / total if total > 0 else None
     
     def get_trade_frequency(self, window: int = 200) -> float:
         """

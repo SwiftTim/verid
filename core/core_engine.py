@@ -254,7 +254,9 @@ class HybridEngine:
         self.ensemble_engine.log_prediction(
             prediction['combined_prob'],
             prediction['ensemble_decision'],
-            actual_direction
+            actual_direction,
+            lstm_prob=prediction.get('lstm_prob'),
+            tree_prob=prediction.get('tree_prob')
         )
         
         if prediction['final_decision'] != 'SKIP':

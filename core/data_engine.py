@@ -67,30 +67,49 @@ class DataEngine:
         self.sequence_length = sequence_length
         self.buffer = StreamingBuffer()
     
-    def create_sequences(self, df, lookahead=5, min_move=0.003):
+    def create_sequences(self, df, lookahead=10, pt=0.005, sl=0.003):
         """
-        Only label ticks where price moves MEANINGFULLY.
-        Skip ambiguous ticks entirely.
+        Triple Barrier Labeling:
+        - UP (1) if price hits Profit Target (pt) first
+        - DOWN (0) if price hits Stop Loss (sl) first
+        - SKIP if neither hit within lookahead window
         """
         feature_cols = [col for col in df.columns
                         if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
+        
+        # Volatility Normalized Input Expansion
+        if 'quote' in df.columns:
+            returns = df['quote'].pct_change()
+            vol = returns.rolling(50).std() + 1e-8
+            df['norm_returns'] = returns / vol
+            if 'norm_returns' not in feature_cols:
+                feature_cols.append('norm_returns')
+
         X, y = [], []
+        data_values = df[feature_cols].values
+        quotes = df['quote'].values
 
         for i in range(len(df) - self.sequence_length - lookahead):
-            seq = df.iloc[i:i + self.sequence_length][feature_cols].values
-
-            # Net price move over next N ticks
-            entry  = df['quote'].iloc[i + self.sequence_length]
-            exit_p = df['quote'].iloc[i + self.sequence_length + lookahead]
-            net_move = (exit_p - entry) / entry
-
-            # SKIP ambiguous ticks — only label clear moves
-            if abs(net_move) < min_move:
-                continue
-
-            target = 1 if net_move > 0 else 0
-            X.append(seq)
-            y.append(target)
+            # Triple barrier window
+            entry_p = quotes[i + self.sequence_length]
+            window = quotes[i + self.sequence_length + 1 : i + self.sequence_length + lookahead + 1]
+            
+            upper_barrier = entry_p * (1 + pt)
+            lower_barrier = entry_p * (1 - sl)
+            
+            target = None
+            for p in window:
+                if p >= upper_barrier:
+                    target = 1
+                    break
+                elif p <= lower_barrier:
+                    target = 0
+                    break
+            
+            if target is not None:
+                seq = data_values[i : i + self.sequence_length]
+                X.append(seq)
+                y.append(target)
 
         return np.array(X), np.array(y)
 
@@ -148,16 +167,18 @@ class DataEngine:
         Returns:
             X: (1, sequence_length, n_features) or None if insufficient data
         """
-        if len(df) < self.sequence_length:
+        if len(df) < 50:
             return None
-        
+
+        # Volatility Normalized Input
+        returns = df['quote'].pct_change()
+        vol = returns.rolling(50).std() + 1e-8
+        df['norm_returns'] = returns / vol
+
         feature_cols = [col for col in df.columns 
                        if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
         
-        # Take last sequence_length rows
         seq = df.iloc[-self.sequence_length:][feature_cols].values
-        
-        # Reshape for LSTM: (1, sequence_length, n_features)
         return seq.reshape(1, self.sequence_length, -1)
     
     def get_latest_features(self, df: pd.DataFrame) -> dict:

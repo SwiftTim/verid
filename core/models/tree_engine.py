@@ -51,7 +51,24 @@ class TreeEngine:
         except ImportError:
             print("⚠️ LightGBM not installed: pip install lightgbm")
         
-        # Random Forest (robust baseline, always available)
+        # CatBoost (Handles tabular data very well)
+        try:
+            from catboost import CatBoostClassifier
+            self.models['catboost'] = CatBoostClassifier(
+                iterations=200,
+                depth=5,
+                learning_rate=0.03,
+                l2_leaf_reg=5,
+                random_strength=1,
+                verbose=False,
+                random_state=42,
+                thread_count=-1
+            )
+            self.weights['catboost'] = 0.4
+        except ImportError:
+            print("⚠️ CatBoost not installed: pip install catboost")
+
+        # Random Forest (robust baseline)
         self.models['rf'] = RandomForestClassifier(
             n_estimators=100,
             max_depth=6,
@@ -60,7 +77,7 @@ class TreeEngine:
             random_state=42,
             n_jobs=-1
         )
-        self.weights['rf'] = 0.15
+        self.weights['rf'] = 0.1
         
         # Normalize weights to sum to 1
         total = sum(self.weights.values())
@@ -74,19 +91,43 @@ class TreeEngine:
         if len(X_train.shape) == 3:
             X_train = X_train.reshape(X_train.shape[0], -1)
         
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=5)
+        
         results = {}
+        # 1. Walk-forward validation to get baseline accuracy
         for name, model in self.models.items():
-            model.fit(X_train, y_train)
-            acc = model.score(X_train, y_train)
-            results[name] = acc
-            print(f"   {name} train accuracy: {acc:.2%}")
-        
-        # Feature importance from best model
-        if 'xgb' in self.models:
-            self.feature_importance = self.models['xgb'].feature_importances_
-        elif 'rf' in self.models:
-            self.feature_importance = self.models['rf'].feature_importances_
-        
+            scores = []
+            for train_idx, val_idx in tscv.split(X_train):
+                X_t, X_v = X_train[train_idx], X_train[val_idx]
+                y_t, y_v = y_train[train_idx], y_train[val_idx]
+                model.fit(X_t, y_t)
+                preds = model.predict(X_v)
+                scores.append(accuracy_score(y_v, preds))
+            results[name] = np.mean(scores)
+
+        # 2. SHAP Feature Selection (using best model from CV)
+        try:
+            import shap
+            best_name = max(results, key=results.get)
+            best_model = self.models[best_name]
+            explainer = shap.TreeExplainer(best_model)
+            shap_sample = X_train[:300] if len(X_train) > 300 else X_train
+            shap_values = explainer.shap_values(shap_sample)
+            if isinstance(shap_values, list): shap_values = shap_values[1]
+            importance = np.abs(shap_values).mean(0)
+            self.top_features_idx = np.argsort(importance)[-25:]
+            print(f"   SHAP: Selected top 25 features based on {best_name}")
+        except Exception as e:
+            print(f"⚠️ SHAP selection skipped: {e}")
+            self.top_features_idx = None
+
+        # 3. Final fit on all data (using SHAP features if available)
+        for name, model in self.models.items():
+            X_final = X_train[:, self.top_features_idx] if self.top_features_idx is not None else X_train
+            model.fit(X_final, y_train)
+            print(f"   {name} final fit complete (CV Acc: {results[name]:.2%})")
+
         self.is_trained = True
         return {'train_accuracy': np.mean(list(results.values())), 
                 'model_accuracies': results}
@@ -98,6 +139,10 @@ class TreeEngine:
         if len(X.shape) == 3:
             X = X.reshape(X.shape[0], -1)
         
+        # SHAP selection filter
+        if getattr(self, 'top_features_idx', None) is not None:
+            X = X[:, self.top_features_idx]
+
         # Weighted average of all models
         combined = np.zeros(len(X))
         for name, model in self.models.items():

@@ -66,6 +66,12 @@ class FeatureEngine:
         # ─────────────────────────────────────────────
         df['velocity']     = df['tick_diff'].rolling(3).mean()
         df['acceleration'] = df['velocity'].diff()
+        
+        # EMA Slope Features
+        ema_fast = df['quote'].ewm(span=10).mean()
+        df['ema_slope_10'] = ema_fast.diff()
+        ema_slow = df['quote'].ewm(span=50).mean()
+        df['ema_slope_50'] = ema_slow.diff()
 
         # ─────────────────────────────────────────────
         # MEAN REVERSION SIGNALS
@@ -147,6 +153,10 @@ class FeatureEngine:
         # REVERSAL SCORE  ← NEW
         # ─────────────────────────────────────────────
         df['reversal_score'] = (df['rsi_norm'] * -1) + (df['zscore_20'] * -1)
+
+        # Feature Interaction Expansion
+        df['vol_x_momentum'] = df['vol_10'] * df['mom_10']
+        df['vol_x_rsi'] = df['vol_10'] * df['rsi_norm']
 
         # ─────────────────────────────────────────────
         # ENTROPY FEATURE  ← NEW (most important filter)
@@ -263,14 +273,19 @@ class FeatureEngine:
         return dict(sorted(filtered.items(), key=lambda x: x[1], reverse=True))
 
     def detect_drift(self, df_old: pd.DataFrame, df_new: pd.DataFrame) -> dict:
+        """
+        Use Kolmogorov-Smirnov test to detect distribution changes.
+        """
+        from scipy.stats import ks_2samp
         drift_metrics = {}
         for col in self.feature_names:
             if col in df_old.columns and col in df_new.columns:
-                mean_old = df_old[col].mean()
-                mean_new = df_new[col].mean()
-                std_old  = df_old[col].std()
-                drift = abs(mean_new - mean_old) / (std_old + 1e-8)
-                drift_metrics[col] = drift
+                stat, p = ks_2samp(df_old[col], df_new[col])
+                drift_metrics[col] = {
+                    'stat': stat,
+                    'p_value': p,
+                    'drift_detected': p < 0.05
+                }
         return drift_metrics
 
     def validate_features(self, df: pd.DataFrame) -> dict:

@@ -23,6 +23,16 @@ except ImportError:
 from ..config import LSTM_CONFIG
 
 
+def focal_loss(gamma=2., alpha=.25):
+    from tensorflow import keras
+    import tensorflow as tf
+    def loss(y_true, y_pred):
+        bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+        pt = tf.exp(-bce)
+        return alpha * (1 - pt)**gamma * bce
+    return loss
+
+
 class LSTMEngine:
     """
     Shallow LSTM for temporal pattern detection
@@ -82,7 +92,7 @@ class LSTMEngine:
         model = Model(inputs, out)
         model.compile(
             optimizer='adam',
-            loss='binary_crossentropy',
+            loss=focal_loss(),
             metrics=['accuracy']
         )
         self.model = model
@@ -108,11 +118,14 @@ class LSTMEngine:
                           patience=3, restore_best_weights=True),
             ReduceLROnPlateau(factor=0.5, patience=2, min_lr=1e-5)
         ]
+
+        # Apply Label Smoothing (0.1, 0.9)
+        y_train_smooth = y_train * 0.8 + 0.1
         
         val_data = (X_val, y_val) if X_val is not None else None
         
         history = self.model.fit(
-            X_train, y_train,
+            X_train, y_train_smooth,
             epochs=15,           # more epochs, early stopping handles overfit
             batch_size=128,
             validation_data=val_data,
