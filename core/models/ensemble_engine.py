@@ -29,8 +29,13 @@ class EnsembleEngine:
         self.prediction_history = []
         self.accuracy_history = []
         self.meta_learner = None
-        self.calibration_data = []
+        self.calibrator = None
         self.MAX_THRESHOLD = MAX_THRESHOLD
+        
+        # Asymmetric thresholds
+        self.buy_threshold = INITIAL_THRESHOLD
+        self.sell_threshold = INITIAL_THRESHOLD
+        self.min_ev_threshold = 0.05  # Minimum positive expectancy to trade
     
     def combine_probabilities(
         self, 
@@ -51,6 +56,7 @@ class EnsembleEngine:
         Train a meta-learner (logistic regression) on top of base model outputs.
         """
         from xgboost import XGBClassifier
+        from sklearn.calibration import IsotonicRegression
         import numpy as np
         
         X_meta = np.column_stack([lstm_probs, tree_probs,
@@ -66,16 +72,28 @@ class EnsembleEngine:
             n_jobs=-1
         )
         self.meta_learner.fit(X_meta, y_true)
-        print("✅ Meta-learner (XGBoost stacking) trained")
+        
+        # Probability Calibration (Isotonic)
+        # Maps raw meta-prob to actual historical win-rate
+        meta_probs = self.meta_learner.predict_proba(X_meta)[:, 1]
+        self.calibrator = IsotonicRegression(out_of_bounds='clip')
+        self.calibrator.fit(meta_probs, y_true)
+        
+        print("✅ Meta-learner (XGBoost) + Isotonic Calibrator trained")
 
     def combine_with_meta(self, lstm_prob, tree_prob):
-        """Use meta-learner if available, else fall back to weighted average."""
+        """Use calibrated meta-learner if available."""
         if self.meta_learner is not None:
             import numpy as np
             X_meta = np.array([[lstm_prob, tree_prob,
                                  lstm_prob * tree_prob,
                                  abs(lstm_prob - tree_prob)]])
-            return float(self.meta_learner.predict_proba(X_meta)[0, 1])
+            raw_prob = float(self.meta_learner.predict_proba(X_meta)[0, 1])
+            
+            # Apply Isotonic Calibration
+            if self.calibrator is not None:
+                return float(self.calibrator.transform([raw_prob])[0])
+            return raw_prob
         return self.combine_probabilities(lstm_prob, tree_prob)
     
     def combine_batch(
@@ -173,10 +191,14 @@ class EnsembleEngine:
             if abs(lstm_prob - tree_prob) > 0.35:
                 return "SKIP", 0.0
 
-        # ── 9. FINAL DECISION ──────────────────────────────────────────
-        if combined_prob > threshold:
+        # ── 9. FINAL EXPECTANCY-BASED DECISION ──────────────────────────
+        # EV UP = (P_win * 0.95) - (P_loss * 1.0)
+        ev_up = (combined_prob * 0.95) - ((1 - combined_prob) * 1.0)
+        ev_down = ((1 - combined_prob) * 0.95) - (combined_prob * 1.0)
+
+        if ev_up > self.min_ev_threshold and combined_prob > self.buy_threshold:
             decision = "BUY"
-        elif combined_prob < (1 - threshold):
+        elif ev_down > self.min_ev_threshold and (1 - combined_prob) > self.sell_threshold:
             decision = "SELL"
         else:
             decision = "SKIP"

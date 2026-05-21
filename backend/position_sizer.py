@@ -40,6 +40,10 @@ class RiskConfig:
     daily_loss_limit_pct:  float = 0.05   # stop trading if session P&L < -5%
     max_open_positions:    int   = 1       # only 1 contract at a time (binary)
     max_trades_per_hour:   int   = 30
+    
+    # Capital Preservation
+    max_consecutive_losses: int  = 5       # stop after 5 losses in a row
+    drawdown_stake_reduction: bool = True  # shrink stake on losing streak
 
     # Per-trade sizing
     base_stake_pct:        float = 0.01   # 1% of balance per trade
@@ -112,6 +116,11 @@ class PositionSizer:
         if len(self._hour_trades) >= self.cfg.max_trades_per_hour:
             return self._reject("Trade rate limit (per-hour) exceeded")
 
+        # Consecutive Loss circuit breaker
+        consec_losses = self._calculate_consecutive_losses()
+        if consec_losses >= self.cfg.max_consecutive_losses:
+            return self._reject(f"Consecutive loss limit hit ({consec_losses} >= {self.cfg.max_consecutive_losses})")
+
         # ── 2. Signal quality gate ─────────────────────────────────────────
         confidence   = signal.get("confidence", 0.0)
         entropy      = signal.get("entropy")
@@ -146,6 +155,15 @@ class PositionSizer:
         # Apply base_stake_pct as floor (use whichever is larger, up to max)
         base_stake = self.balance * self.cfg.base_stake_pct
         stake = max(raw_stake, base_stake)
+
+        # Apply capital preservation multipliers (Drawdown engineering)
+        if self.cfg.drawdown_stake_reduction:
+            consec_losses = self._calculate_consecutive_losses()
+            if consec_losses >= 2:
+                reduction = 0.5 ** (consec_losses - 1)
+                stake *= reduction
+                logger.info(f"📉 Sizing: Reducing stake due to {consec_losses} consecutive losses (Multiplier: {reduction:.2f})")
+
         stake = max(stake, self.cfg.min_stake_usd)
         stake = min(stake, self.cfg.max_stake_usd)
         stake = round(stake, 2)
@@ -178,6 +196,19 @@ class PositionSizer:
         self.balance      = new_balance
         self._session_pnl = 0.0
         self._hour_trades.clear()
+
+    def _calculate_consecutive_losses(self) -> int:
+        """Count current consecutive losses in recent history."""
+        if not self._recent_results:
+            return 0
+        
+        count = 0
+        for i in range(len(self._recent_results) - 1, -1, -1):
+            if self._recent_results[i] == 0:
+                count += 1
+            else:
+                break
+        return count
 
     # ── Internal helpers ───────────────────────────────────────────────────
 

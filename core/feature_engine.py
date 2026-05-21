@@ -138,7 +138,14 @@ class FeatureEngine:
         df['pressure_diff']     = df['buy_pressure_fast'] - df['buy_pressure']
 
         # ─────────────────────────────────────────────
-        # PRICE Z-SCORE  ← NEW
+        # PSEUDO-ORDER FLOW (Tick Imbalance) ← NEW
+        # ─────────────────────────────────────────────
+        df['tick_imbalance_5']  = df['direction'].rolling(5).mean()
+        df['tick_imbalance_20'] = df['direction'].rolling(20).mean()
+        df['burst_ratio'] = df['abs_diff'] / (df['abs_diff'].rolling(100).mean() + 1e-8)
+        
+        # ─────────────────────────────────────────────
+        # PRICE Z-SCORE
         # ─────────────────────────────────────────────
         rolling_mean = df['quote'].rolling(20).mean()
         rolling_std  = df['quote'].rolling(20).std()

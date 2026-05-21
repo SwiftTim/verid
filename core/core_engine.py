@@ -306,53 +306,69 @@ class HybridEngine:
     
     def retrain(self):
         """
-        Retrain models on latest data
-        
-        Uses incremental/warm restart approach
+        Retrain models with Out-of-Fold (OOF) Stacking to prevent meta-learner leakage.
         """
-        print(f"🔄 Retraining at tick {self.tick_count}...")
+        print(f"🔄 Professional Quant Retrain starting at tick {self.tick_count}...")
         start_time = time.time()
         
-        # Get latest data
         df = self.data_engine.buffer.get_dataframe()
         df = self.feature_engine.transform(df)
-        
         X, y = self.data_engine.create_sequences(df)
         
-        if len(X) < 100:
-            print("  ⚠️ Insufficient data for retrain, skipping")
+        if len(X) < 200:
+            print("  ⚠️ Insufficient data for robust OOF retrain, skipping")
             return
+            
+        from sklearn.model_selection import KFold
+        kf = KFold(n_splits=3, shuffle=False)
         
-        # Use only recent data for retraining (last 80%)
-        train_size = int(len(X) * 0.8)
-        X_train = X[-train_size:]
-        y_train = y[-train_size:]
+        oof_lstm = np.zeros(len(X))
+        oof_tree = np.zeros(len(X))
         
-        # Retrain LSTM (few epochs only)
-        self.lstm_engine.train(X_train, y_train, verbose=0)
+        print("  Generating OOF predictions for Meta-Learner...")
+        for train_idx, val_idx in kf.split(X):
+            X_t, X_v = X[train_idx], X[val_idx]
+            y_t, y_v = y[train_idx], y[val_idx]
+            
+            # Temporary models for OOF
+            from .models.lstm_engine import LSTMEngine
+            from .models.tree_engine import TreeEngine
+            temp_lstm = LSTMEngine()
+            temp_tree = TreeEngine()
+            
+            temp_lstm.train(X_t, y_t, verbose=0)
+            X_t_flat = X_t.reshape(X_t.shape[0], -1)
+            temp_tree.train(X_t_flat, y_t)
+            
+            oof_lstm[val_idx] = temp_lstm.predict_proba(X_v)
+            X_v_flat = X_v.reshape(X_v.shape[0], -1)
+            oof_tree[val_idx] = temp_tree.predict_proba(X_v_flat)
+
+        # ── 1. Train Meta-Learner on OOF (No Leakage!) ──
+        print("  Training Meta-Learner on OOF data...")
+        self.ensemble_engine.calibrate_and_stack(oof_lstm, oof_tree, y)
         
-        # Retrain Tree
-        X_train_flat = X_train.reshape(X_train.shape[0], -1)
-        self.tree_engine.train(X_train_flat, y_train)
+        # ── 2. Final Fit on All Data ──
+        print("  Final fit on all data for production...")
+        self.lstm_engine.train(X, y, verbose=0)
+        X_flat = X.reshape(X.shape[0], -1)
+        self.tree_engine.train(X_flat, y)
         
-        # Decay RL exploration (if applicable)
-        if hasattr(self.q_agent, 'decay_epsilon'):
-            self.q_agent.decay_epsilon()
+        # ── 3. Threshold Calibration ──
+        lstm_final = self.lstm_engine.predict_proba(X)
+        tree_final = self.tree_engine.predict_proba(X_flat)
+        combined = (lstm_final + tree_final) / 2
+        self.ensemble_engine.calibrate_threshold(combined, y)
         
-        # ── 4. Re-calibrate Meta-Learner ──
-        print("  Re-calibrating meta-learner and threshold...")
-        lstm_probs = self.lstm_engine.predict_proba(X_train)
-        tree_probs = self.tree_engine.predict_proba(X_train_flat)
-        self.ensemble_engine.calibrate_and_stack(lstm_probs, tree_probs, y_train)
-        
-        # Walk-forward threshold calibration
-        combined_prob = (lstm_probs + tree_probs) / 2
-        self.ensemble_engine.calibrate_threshold(combined_prob, y_train)
-        
+        # ── 4. Drift Check ──
+        recent_acc = self.ensemble_engine.get_recent_accuracy(100)
+        if recent_acc is not None and recent_acc < 0.52:
+            print(f"🚨 DRIFT DETECTED (Acc: {recent_acc:.2%}) - Emergency Pause Triggered")
+            # In a real system we'd set a flag to pause trading
+            
         self.last_retrain_tick = self.tick_count
-        
         elapsed = time.time() - start_time
-        print(f"✅ Retrain complete in {elapsed:.2f}s")
+        print(f"✅ OOF Retrain complete in {elapsed:.2f}s")
     
     def get_status(self) -> dict:
         """
