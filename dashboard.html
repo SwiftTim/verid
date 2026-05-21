@@ -496,7 +496,11 @@
 
       <div class="panel">
         <div class="panel-title">Session</div>
+        <div class="kv"><span class="kv-key">Balance</span><span class="kv-val" id="stat-balance"
+            style="color:var(--green)">$...</span></div>
         <div class="kv"><span class="kv-key">Ticks</span><span class="kv-val" id="stat-ticks">0</span></div>
+        <div class="kv" style="color:var(--cyan)"><span class="kv-key" style="color:var(--cyan)">Colab
+            Memory</span><span class="kv-val" id="stat-colab">0 / 1000</span></div>
         <div class="kv"><span class="kv-key">Predictions</span><span class="kv-val" id="stat-preds">0</span></div>
         <div class="kv"><span class="kv-key">Trades</span><span class="kv-val" id="stat-trades">0</span></div>
         <div class="kv"><span class="kv-key">Win rate</span><span class="kv-val" id="stat-wr">--</span></div>
@@ -530,8 +534,8 @@
             <input type="number" id="bot-freq" value="5" min="1"
               style="flex: 1; background: transparent; border: 1px solid var(--border); color: white; border-radius: 4px; padding: 2px 5px; font-family: 'JetBrains Mono'; font-size: 11px;">
           </div>
-          <button id="velocity-btn" class="btn btn-blue" style="margin-top: 5px;" onclick="toggleVelocityBot()">START
-            BOT</button>
+          <button type="button" id="velocity-btn" class="btn btn-blue" style="margin-top: 5px;"
+            onclick="toggleVelocityBot()">START BOT</button>
         </div>
       </div>
     </div>
@@ -552,9 +556,9 @@
     <div class="col">
       <div class="panel">
         <div class="panel-title">Controls</div>
-        <button class="btn btn-green" onclick="toggleAuto()">⚡ Toggle Auto-Trade</button>
-        <button class="btn btn-blue" onclick="forceRetrain()">🔄 Force Retrain</button>
-        <button class="btn" onclick="fetchPerf()">📊 Refresh Metrics</button>
+        <button type="button" class="btn btn-green" onclick="toggleAuto()">⚡ Toggle Auto-Trade</button>
+        <button type="button" class="btn btn-blue" onclick="forceRetrain()">🔄 Force Retrain</button>
+        <button type="button" class="btn" onclick="fetchPerf()">📊 Refresh Metrics</button>
       </div>
 
       <div class="panel">
@@ -576,7 +580,7 @@
 
   <script>
     // ── Config ────────────────────────────────────────────────────────
-    const API_KEY = (new URLSearchParams(location.search)).get('key') || '';
+    const API_KEY = (new URLSearchParams(location.search)).get('key') || 'changeme';
     const headers = { 'X-API-Key': API_KEY };
 
     // ── Chart setup ───────────────────────────────────────────────────
@@ -637,7 +641,8 @@
     // ── WebSocket ─────────────────────────────────────────────────────
     let ws;
     function connect() {
-      ws = new WebSocket(`ws://${location.host}/ws`);
+      // Hardcoded to 8000 to bridge the gap between LiveServer(5500) and Backend(8000)
+      ws = new WebSocket(`ws://127.0.0.1:8000/ws`);
 
       ws.onopen = () => {
         document.getElementById('ws-dot').classList.add('live');
@@ -659,6 +664,10 @@
           break;
         case 'prediction':
           handlePrediction(msg.data);
+          if (msg.status) document.getElementById('stat-colab').textContent = `${msg.status.tick_count} / 1000`;
+          break;
+        case 'connected':
+          if (msg.balance) document.getElementById('stat-balance').textContent = '$' + Number(msg.balance).toFixed(2);
           break;
         case 'trade_opened':
           handleTradeOpened(msg);
@@ -667,8 +676,8 @@
           handleTradeUpdate(msg);
           break;
         case 'training_progress':
-          document.getElementById('signal-conf').textContent =
-            `Training… ${msg.tick_count}/500 ticks`;
+          document.getElementById('stat-colab').textContent = `${msg.tick_count} / 1000`;
+          document.getElementById('signal-conf').textContent = `Syncing... ${msg.tick_count}/1000`;
           break;
         case 'trade_blocked':
           addAlert('INFO', 'Trade blocked: ' + msg.reason);
@@ -686,6 +695,11 @@
 
       const t = new Date(tick.timestamp * 1000).toLocaleTimeString();
       pushChart(priceChart, t, tick.quote);
+
+      // Real-time Pipeline Alert
+      if (total % 100 === 0) {
+        addAlert('INFO', `Market Flow Active: ${total} total ticks processed.`);
+      }
     }
 
     function handlePrediction(pred) {
@@ -729,6 +743,10 @@
     }
 
     function handleTradeUpdate(msg) {
+      if (msg.balance) {
+        document.getElementById('stat-balance').textContent = '$' + Number(msg.balance).toFixed(2);
+      }
+
       if (msg.status === 'WON' || msg.status === 'LOST') {
         document.getElementById('stat-open').textContent = 0;
         const profit = msg.profit || 0;
@@ -737,7 +755,10 @@
 
         const wr = sessionTrades > 0 ? (sessionWins / sessionTrades * 100).toFixed(1) : '--';
         document.getElementById('stat-wr').textContent = wr + '%';
-        document.getElementById('stat-wr').className = 'kv-val ' + (sessionWins / sessionTrades > 0.5 ? 'green' : 'red');
+
+        const wrNum = sessionTrades > 0 ? (sessionWins / sessionTrades) : 0;
+        document.getElementById('stat-wr').className = 'kv-val ' + (wrNum >= 0.5 ? 'green' : 'red');
+
         document.getElementById('stat-pnl').textContent = '$' + sessionPnl.toFixed(2);
         document.getElementById('stat-pnl').className = 'kv-val ' + (sessionPnl >= 0 ? 'green' : 'red');
 
@@ -801,13 +822,13 @@
       badge.textContent = autoTradeOn ? 'AUTO' : 'PAPER';
       badge.className = 'badge ' + (autoTradeOn ? 'badge-auto' : 'badge-paper');
       try {
-        await fetch(`/api/auto_trade/toggle?enabled=${autoTradeOn}`, { method: 'POST', headers });
+        await fetch(`http://127.0.0.1:8000/api/auto_trade/toggle?enabled=${autoTradeOn}`, { method: 'POST', headers });
       } catch (e) { console.error(e); }
     }
 
     async function forceRetrain() {
       try {
-        await fetch('/api/retrain', { method: 'POST', headers });
+        await fetch('http://127.0.0.1:8000/api/retrain', { method: 'POST', headers });
         addAlert('INFO', 'Retrain triggered');
       } catch (e) { addAlert('WARNING', 'Retrain failed: ' + e.message); }
     }
@@ -841,26 +862,28 @@
       velocityBot.lastDirection = direction;
       velocityBot.total++;
       document.getElementById('bot-cycles').textContent = velocityBot.total;
-
       try {
-        await fetch('/api/trade/manual', {
+        await fetch('http://127.0.0.1:8000/api/trade/manual', {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({ direction, stake: 1.0 })
         });
-      } catch (e) { }
+      } catch (e) {
+        console.error('Velocity Bot Trade Error:', e);
+        addAlert('CRITICAL', 'Bot execution error: ' + e.message);
+      }
     }
 
     async function fetchPerf() {
       try {
-        const r = await fetch('/api/performance', { headers });
+        const r = await fetch('http://127.0.0.1:8000/api/performance', { headers });
         const d = await r.json();
         if (d.win_rate !== undefined) {
           document.getElementById('stat-wr').textContent = (d.win_rate * 100).toFixed(1) + '%';
           document.getElementById('stat-pnl').textContent = '$' + (d.net_profit || 0).toFixed(2);
         }
         // Drawdown from metrics
-        const r2 = await fetch('/api/metrics', { headers }).catch(() => null);
+        const r2 = await fetch('http://127.0.0.1:8000/api/metrics', { headers }).catch(() => null);
         if (r2) {
           const m = await r2.json();
           const dd = ((m.trades?.max_dd || 0) * 100).toFixed(1);
@@ -870,12 +893,58 @@
       } catch (e) { }
     }
 
+    async function syncState() {
+      try {
+        const r = await fetch('http://127.0.0.1:8000/api/status', { headers });
+        const d = await r.json();
+
+        // Sync Auto Trade state
+        autoTradeOn = d.auto_trade;
+        const badge = document.getElementById('auto-badge');
+        badge.textContent = autoTradeOn ? 'AUTO' : 'PAPER';
+        badge.className = 'badge ' + (autoTradeOn ? 'badge-auto' : 'badge-paper');
+
+        // Sync other stats if needed
+        // Sync Performance
+        const perfR = await fetch('http://127.0.0.1:8000/api/performance', { headers });
+        if (perfR.ok) {
+          const p = await perfR.json();
+          sessionPnl = p.net_profit || 0;
+          sessionTrades = p.total || 0;
+          sessionWins = p.wins || 0;
+
+          document.getElementById('stat-pnl').textContent = '$' + sessionPnl.toFixed(2);
+          document.getElementById('stat-pnl').className = 'kv-val ' + (sessionPnl >= 0 ? 'green' : 'red');
+
+          const wr = sessionTrades > 0 ? (sessionWins / sessionTrades * 100).toFixed(1) : '--';
+          document.getElementById('stat-wr').textContent = wr + '%';
+          const wrNum = sessionTrades > 0 ? (sessionWins / sessionTrades) : 0;
+          document.getElementById('stat-wr').className = 'kv-val ' + (wrNum >= 0.5 ? 'green' : 'red');
+        }
+
+        // Sync Recent Trades
+        const tradesR = await fetch('http://127.0.0.1:8000/api/trades?limit=10', { headers });
+        if (tradesR.ok) {
+          const t = await tradesR.json();
+          if (t.trades && t.trades.length > 0) {
+            t.trades.forEach(tr => addTradeRow({
+              direction: tr.direction,
+              stake: tr.stake,
+              status: tr.status,
+              profit: tr.profit
+            }));
+          }
+        }
+      } catch (e) { console.error('Failed to sync state:', e); }
+    }
+
     // ── Heartbeat ─────────────────────────────────────────────────────
     setInterval(() => { if (ws?.readyState === 1) ws.send('ping'); }, 5000);
     setInterval(fetchPerf, 30000);
 
     // ── Boot ──────────────────────────────────────────────────────────
     connect();
+    syncState();
     fetchPerf();
   </script>
 </body>

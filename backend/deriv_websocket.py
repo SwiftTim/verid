@@ -37,25 +37,19 @@ class DerivTickStream:
     
     def __init__(
         self,
-        app_id: str = '1089',
+        app_id: str,
         symbol: str = 'R_100',
-        on_tick: Optional[Callable] = None,
-        on_error: Optional[Callable] = None,
-        on_connect: Optional[Callable] = None
+        on_tick=None,
+        on_error=None,
+        on_connect=None
     ):
         """
-        Initialize Deriv tick stream client
-        
-        Args:
-            app_id: Your Deriv API app ID
-            symbol: Market symbol (R_100, R_75, R_50, etc.)
-            on_tick: Callback function for tick data
-            on_error: Callback function for errors
-            on_connect: Callback function for connection events
+        Initialize the stream client
         """
         self.app_id = app_id
         self.symbol = symbol
-        self.endpoint = f"wss://ws.binaryws.com/websockets/v3?app_id={app_id}"
+        # Use the verified public endpoint for price data
+        self.endpoint = "wss://api.derivws.com/trading/v1/options/ws/public"
         
         # Callbacks
         self.on_tick = on_tick or self._default_on_tick
@@ -82,10 +76,16 @@ class DerivTickStream:
         try:
             logger.info(f"Connecting to Deriv API: {self.symbol}")
             
+            # Match settings that worked in TradeExecutor
+            headers = { "Origin": "https://developers.deriv.com" }
+            ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            
             self.websocket = await websockets.connect(
                 self.endpoint,
+                additional_headers=headers,
+                user_agent_header=ua,
                 ping_interval=20,
-                ping_timeout=10
+                ping_timeout=20
             )
             
             self.is_connected = True

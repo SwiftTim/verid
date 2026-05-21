@@ -107,19 +107,18 @@ class ColabClient:
         return None
     
     async def get_status(self) -> Optional[Dict]:
-        """
-        Get Colab engine status
-        
-        Returns:
-            Status dictionary or None on error
-        """
-        url = f"{self.colab_url}/status"
+        """Get Colab engine status from root URL."""
+        url = f"{self.colab_url}/"
         
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
-                return response.json()
+                data = response.json()
+                # Map 'engine_ticks' to 'tick_count' for dashboard compatibility
+                if 'engine_ticks' in data:
+                    data['tick_count'] = data['engine_ticks']
+                return data
         
         except Exception as e:
             logger.error(f"Status check failed: {e}")

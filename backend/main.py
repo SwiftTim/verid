@@ -41,9 +41,10 @@ logger = logging.getLogger("deriv.main")
 # ─────────────────────────────────────────────
 # Config — override via environment variables
 # ─────────────────────────────────────────────
-COLAB_URL              = os.getenv("COLAB_URL", "https://guam-attributes-lie-equality.trycloudflare.com")
-DERIV_API_TOKEN        = os.getenv("DERIV_API_TOKEN", "")          # real-money token
-DERIV_APP_ID           = os.getenv("DERIV_APP_ID", "1089")
+COLAB_URL              = os.getenv("COLAB_URL", "https://supply-paxil-demo-mounting.trycloudflare.com")
+DERIV_API_TOKEN        = os.getenv("DERIV_API_TOKEN", "pat_c493adf4cbbab38b6bb677308c26df1715d40d54ead2fdfda4b33c6167445a6d")
+DERIV_APP_ID           = os.getenv("DERIV_APP_ID", "33k5VK8DBmgx4PmY9BKVB")
+DERIV_ACCOUNT_ID       = os.getenv("DERIV_ACCOUNT_ID", "DOT92180896")   # Demo account
 DERIV_SYMBOL           = os.getenv("DERIV_SYMBOL", "1HZ100V")
 AUTO_TRADE_ENABLED     = os.getenv("AUTO_TRADE", "false").lower() == "true"
 TRADE_DURATION         = int(os.getenv("TRADE_DURATION", "5"))     # ticks
@@ -120,6 +121,7 @@ async def _startup():
         trade_executor = TradeExecutor(
             api_token=DERIV_API_TOKEN,
             app_id=DERIV_APP_ID,
+            account_id=DERIV_ACCOUNT_ID,
             on_trade_update=_on_trade_update,
         )
         await trade_executor.connect()
@@ -206,7 +208,12 @@ async def _predict_and_trade(ticks: List[Dict]):
     prediction_cache.append(prediction)
     if len(prediction_cache) > 500:
         prediction_cache = prediction_cache[-500:]
-    await _broadcast({"type": "prediction", "data": prediction})
+    
+    await _broadcast({
+        "type": "prediction", 
+        "data": prediction,
+        "status": status  # Keep memory bar updated
+    })
 
     decision = prediction.get("final_decision", "SKIP")
     logger.info(
@@ -257,14 +264,17 @@ def _on_trade_update(trade):
         if position_sizer and trade.profit is not None:
             position_sizer.record_outcome(trade.profit)
 
-    # Broadcast to dashboard (fire-and-forget from sync callback)
-    asyncio.create_task(_broadcast({
-        "type":      "trade_update",
-        "trade_id":  trade.trade_id,
-        "status":    trade.status,
-        "profit":    trade.profit,
-        "direction": trade.direction,
-    }))
+    async def _update_task():
+        bal = await trade_executor.get_balance() if trade_executor else 0.0
+        await _broadcast({
+            "type":      "trade_update",
+            "trade_id":  trade.trade_id,
+            "status":    trade.status,
+            "profit":    trade.profit,
+            "direction": trade.direction,
+            "balance":   bal
+        })
+    asyncio.create_task(_update_task())
 
     logger.info(
         f"Trade settled: {trade.trade_id} | {trade.status} "
@@ -316,7 +326,12 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
     ws_clients.append(websocket)
     try:
-        await websocket.send_json({"type": "connected", "msg": "Deriv Auto-Trader"})
+        bal = await trade_executor.get_balance() if trade_executor else 0.0
+        await websocket.send_json({
+            "type": "connected", 
+            "msg": "Deriv Auto-Trader",
+            "balance": bal
+        })
         while True:
             data = await websocket.receive_text()
             if data == "ping":

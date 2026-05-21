@@ -14,7 +14,7 @@ print("=" * 70)
 print("🚀 DERIV PREDICTOR - QUICK START")
 print("=" * 70)
 print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print(f"🔑 API Key: V35FbErHFzWjhj5")
+print(f"🔑 API Key: pat_810acea9189247e547b2187dcacb7eb1c39ee880603c329fa1c642acb582b3e6")
 print(f"📊 Symbol: R_100 (Volatility 100 Index)")
 print(f"⚡ Expected tick rate: ~1.5 ticks/second")
 print("=" * 70)
@@ -104,7 +104,7 @@ async def test_connection():
     # Create client
     global client
     client = DerivTickStream(
-        app_id='V35FbErHFzWjhj5',
+        app_id='33k5VK8DBmgx4PmY9BKVB',
         symbol='R_100',
         on_tick=on_tick,
         on_error=on_error,

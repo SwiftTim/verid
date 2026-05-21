@@ -14,6 +14,7 @@ WebSocket connection and reconnects automatically on failure.
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Dict, Any, List, Callable
 
+import httpx
 import websockets
 import aiosqlite
 
@@ -29,8 +31,9 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────
-WS_ENDPOINT = "wss://ws.binaryws.com/websockets/v3?app_id={app_id}"
-DEFAULT_APP_ID = "1089"          # Public demo app_id; use your own for live
+OTP_ENDPOINT    = "https://api.derivws.com/trading/v1/options/accounts/{account_id}/otp"
+DEFAULT_APP_ID  = "33k5VK8DBmgx4PmY9BKVB"
+DEFAULT_ACCOUNT = "DOT92180896"            # Demo account ID
 RECONNECT_DELAY = 3              # seconds between reconnect attempts
 MAX_RECONNECT   = 10
 HEARTBEAT_SECS  = 20             # keep-alive ping interval
@@ -79,10 +82,11 @@ class TradeRecord:
 class TradeDB:
     """Lightweight async SQLite store for trade records."""
 
-    def __init__(self, db_path: str = "trades.db"):
+    def __init__(self, db_path: str = "/home/tim/Downloads/2026/trades.db"):
         self.db_path = db_path
 
     async def init(self):
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
@@ -178,18 +182,20 @@ class TradeExecutor:
         self,
         api_token: str,
         app_id: str = DEFAULT_APP_ID,
-        db_path: str = "trades.db",
+        account_id: str = DEFAULT_ACCOUNT,
+        db_path: str = "/home/tim/Downloads/2026/trades.db",
         on_trade_update: Optional[Callable[[TradeRecord], None]] = None,
     ):
-        self.api_token = api_token
-        self.app_id    = app_id
-        self.db        = TradeDB(db_path)
-        self.on_update = on_trade_update   # optional callback for real-time UI
+        self.api_token  = api_token
+        self.app_id     = app_id
+        self.account_id = account_id
+        self.db         = TradeDB(db_path)
+        self.on_update  = on_trade_update
 
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._connected   = False
         self._reconnects  = 0
-        self._pending_req: Dict[str, asyncio.Future] = {}   # req_id → Future
+        self._pending_req: Dict[int, asyncio.Future] = {}   # req_id → Future
         self._open_trades: Dict[str, TradeRecord]    = {}   # contract_id → record
 
         self._listener_task: Optional[asyncio.Task] = None
@@ -201,19 +207,44 @@ class TradeExecutor:
         await self.db.init()
         await self._connect_ws()
 
+    async def _get_otp_url(self) -> str:
+        """Step 1: Call the REST OTP endpoint to get a pre-authenticated WebSocket URL."""
+        otp_url = OTP_ENDPOINT.format(account_id=self.account_id)
+        rest_headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Deriv-App-ID": self.app_id,
+            "Content-Type": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(otp_url, headers=rest_headers, json={})
+            resp.raise_for_status()
+            data = resp.json()
+            ws_url = data["data"]["url"]
+            logger.info(f"TradeExecutor: Got OTP url → {ws_url}")
+            return ws_url
+
     async def _connect_ws(self):
-        url = WS_ENDPOINT.format(app_id=self.app_id)
         while self._reconnects < MAX_RECONNECT:
             try:
-                self._ws = await websockets.connect(url, ping_interval=None)
+                # Step 1: Get pre-authenticated OTP WebSocket URL
+                url = await self._get_otp_url()
+
+                # Step 2: Connect — no authorize message needed!
+                headers = {"Origin": "https://developers.deriv.com"}
+                ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+                self._ws = await websockets.connect(
+                    url,
+                    additional_headers=headers,
+                    user_agent_header=ua,
+                    ping_interval=20,
+                    ping_timeout=30
+                )
                 self._connected = True
                 self._reconnects = 0
-                logger.info("TradeExecutor: WebSocket connected")
+                logger.info("TradeExecutor: WebSocket connected & authenticated via OTP")
 
-                # Authenticate
-                await self._send({"authorize": self.api_token})
-
-                # Start background tasks
+                # Start background listener & heartbeat
                 self._listener_task  = asyncio.create_task(self._listen())
                 self._heartbeat_task = asyncio.create_task(self._heartbeat())
                 return
@@ -236,14 +267,20 @@ class TradeExecutor:
 
     # ── Messaging ──────────────────────────────────────────────────────────
 
-    async def _send(self, payload: Dict) -> str:
-        req_id = str(int(time.time() * 1000))
+    async def _send(self, payload: Dict) -> int:
+        req_id = int(time.time() * 1000)
         payload["req_id"] = req_id
-        await self._ws.send(json.dumps(payload))
+        raw_msg = json.dumps(payload)
+        logger.info(f"→ SENDING {payload.get('msg_type', 'request')} (ID: {req_id})")
+        await self._ws.send(raw_msg)
         return req_id
 
-    async def _request(self, payload: Dict, timeout: float = 10.0) -> Dict:
+    async def _request(self, payload: Dict, timeout: float = 60.0) -> Dict:
         """Send a request and wait for its response by req_id."""
+        if not self._connected or self._ws is None or self._ws.state != 1:
+            logger.info("TradeExecutor: Connection lost, re-authenticating...")
+            await self._connect_ws()
+
         loop   = asyncio.get_event_loop()
         future = loop.create_future()
         req_id = await self._send(payload)
@@ -259,7 +296,8 @@ class TradeExecutor:
         try:
             async for raw in self._ws:
                 msg = json.loads(raw)
-                req_id = str(msg.get("req_id", ""))
+                logger.debug(f"← RECEIVED: {msg}")
+                req_id = msg.get("req_id")
 
                 # Resolve pending request futures
                 if req_id in self._pending_req:
@@ -277,11 +315,11 @@ class TradeExecutor:
                     await self._handle_contract_update(msg)
 
         except websockets.ConnectionClosed:
-            logger.warning("TradeExecutor: connection closed — reconnecting")
+            logger.warning("TradeExecutor: connection closed")
             self._connected = False
-            await self._connect_ws()
-        except asyncio.CancelledError:
-            pass
+        except Exception as e:
+            logger.error(f"TradeExecutor listener error: {e}")
+            self._connected = False
 
     async def _heartbeat(self):
         """Send keep-alive pings."""
@@ -336,7 +374,7 @@ class TradeExecutor:
                 "currency": "USD",
                 "duration": duration,
                 "duration_unit": duration_unit,
-                "symbol":   symbol,
+                "underlying_symbol": symbol,
             })
             proposal_id   = proposal_resp["proposal"]["id"]
             expected_pay  = proposal_resp["proposal"]["payout"]
@@ -385,8 +423,9 @@ class TradeExecutor:
         trade = self._open_trades[cid]
 
         if poc.get("is_expired") or poc.get("is_sold"):
-            profit = poc.get("profit", 0.0)
-            trade.exit_price = poc.get("exit_tick", 0.0)
+            profit_raw = poc.get("profit", 0.0)
+            profit     = float(profit_raw)
+            trade.exit_price = float(poc.get("exit_tick", 0.0))
             trade.profit     = profit
             trade.status     = TradeStatus.WON if profit > 0 else TradeStatus.LOST
             trade.closed_at  = datetime.now(timezone.utc).isoformat()
@@ -400,7 +439,7 @@ class TradeExecutor:
     # ── Helpers ────────────────────────────────────────────────────────────
 
     async def get_balance(self) -> float:
-        resp = await self._request({"balance": 1, "account": "current"})
+        resp = await self._request({"balance": 1})
         return resp["balance"]["balance"]
 
     async def recent_trades(self, limit: int = 20) -> List[Dict]:

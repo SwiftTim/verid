@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+backend_logs.txt
+*.db
+logs/
+models/
+.ipynb_checkpoints/

@@ -67,33 +67,28 @@ class DataEngine:
         self.sequence_length = sequence_length
         self.buffer = StreamingBuffer()
     
-    def create_sequences(self, df: pd.DataFrame, lookahead: int = 3) -> Tuple[np.ndarray, np.ndarray]:
+    def create_sequences(self, df, lookahead=5, min_move=0.003):
         """
-        Create sequences for LSTM training.
-        lookahead=3 means we predict the *net* direction over the next 3 ticks,
-        reducing 1-tick noise significantly.
-
-        Returns:
-            X: (n_samples, sequence_length, n_features)
-            y: (n_samples,) - binary labels (1=UP majority, 0=DOWN majority)
+        Only label ticks where price moves MEANINGFULLY.
+        Skip ambiguous ticks entirely.
         """
-        if len(df) < self.sequence_length + lookahead:
-            return np.array([]), np.array([])
-
         feature_cols = [col for col in df.columns
                         if col not in ['timestamp', 'quote', 'direction', 'tick_diff']]
-
         X, y = [], []
 
         for i in range(len(df) - self.sequence_length - lookahead):
             seq = df.iloc[i:i + self.sequence_length][feature_cols].values
 
-            # Majority direction over next `lookahead` ticks (less noisy label)
-            future_directions = df.iloc[
-                i + self.sequence_length: i + self.sequence_length + lookahead
-            ]['direction'].values
-            target = int(future_directions.mean() > 0.5)
+            # Net price move over next N ticks
+            entry  = df['quote'].iloc[i + self.sequence_length]
+            exit_p = df['quote'].iloc[i + self.sequence_length + lookahead]
+            net_move = (exit_p - entry) / entry
 
+            # SKIP ambiguous ticks — only label clear moves
+            if abs(net_move) < min_move:
+                continue
+
+            target = 1 if net_move > 0 else 0
             X.append(seq)
             y.append(target)
 

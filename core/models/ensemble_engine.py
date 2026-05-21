@@ -93,7 +93,8 @@ class EnsembleEngine:
     
     def make_decision(self, combined_prob, volatility=None, threshold=None,
                       lstm_prob=None, tree_prob=None,
-                      entropy=None, vol_regime=None, market_regime=None):
+                      entropy=None, vol_regime=None, market_regime=None,
+                      regime_edge=None):
         """
         Enhanced decision with:
         - Model disagreement filter  (Phase 1)
@@ -101,9 +102,14 @@ class EnsembleEngine:
         - Minimum confidence gate    (Phase 1)
         - Regime-based dynamic weights (Phase 1)
         - Volatility-aware threshold widening
+        - Regime edge gate (New: skip near-random markets)
         """
         if threshold is None:
             threshold = self.threshold
+
+        # ── 0. REGIME EDGE GATE (New) ──────────────────────────────────
+        if regime_edge is not None and regime_edge < 0.05:
+            return "SKIP", 0.0
 
         # ── 1. DYNAMIC WEIGHTS based on market regime ──────────────────
         if market_regime is not None:
@@ -317,6 +323,47 @@ class EnsembleEngine:
         self.prediction_history = []
         self.accuracy_history = []
     
+    def calibrate_threshold(self, probs, labels, n_splits=5):
+        """
+        Walk-forward search for the best confidence threshold.
+        Maximises profit factor, not just accuracy.
+        """
+        best_threshold = 0.55
+        best_pf = 0.0
+        n = len(probs)
+        fold_size = n // n_splits
+
+        for thresh in np.arange(0.52, 0.70, 0.01):
+            profits = []
+            for fold in range(1, n_splits):
+                train_end = fold * fold_size
+                test_slice = slice(train_end, train_end + fold_size)
+
+                p_test = probs[test_slice]
+                l_test = labels[test_slice]
+
+                for p, l in zip(p_test, l_test):
+                    if p > thresh:
+                        profits.append(0.95 if l == 1 else -1.0)
+                    elif p < (1 - thresh):
+                        profits.append(0.95 if l == 0 else -1.0)
+
+            if not profits:
+                continue
+            wins   = sum(1 for x in profits if x > 0)
+            losses = sum(1 for x in profits if x < 0)
+            gross_win  = sum(x for x in profits if x > 0)
+            gross_loss = abs(sum(x for x in profits if x < 0))
+            pf = gross_win / (gross_loss + 1e-8)
+
+            if pf > best_pf and wins > 10:
+                best_pf = pf
+                best_threshold = thresh
+
+        self.threshold = best_threshold
+        print(f"✅ Calibrated threshold: {best_threshold:.2f} (PF={best_pf:.2f})")
+        return best_threshold
+
     def adjust_weights(self, lstm_weight: float, tree_weight: float):
         """
         Manually adjust model weights

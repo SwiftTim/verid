@@ -45,35 +45,40 @@ class LSTMEngine:
     def build(self, input_shape):
         from tensorflow.keras.models import Model
         from tensorflow.keras.layers import (
-            Input, LSTM, GRU, Dense, Dropout, 
-            Conv1D, BatchNormalization, Add, 
-            GlobalAveragePooling1D, Concatenate
+            Input, Conv1D, Dense, Dropout,
+            BatchNormalization, Add, GlobalAveragePooling1D,
+            MultiHeadAttention, LayerNormalization
         )
-        
+
         inputs = Input(shape=input_shape)
-        
-        # --- Branch 1: LSTM (temporal memory) ---
-        x1 = LSTM(64, return_sequences=True)(inputs)
-        x1 = Dropout(0.3)(x1)
-        x1 = LSTM(32, return_sequences=False)(x1)
-        x1 = Dropout(0.2)(x1)
-        
-        # --- Branch 2: GRU (faster, catches short patterns) ---
-        x2 = GRU(32, return_sequences=False)(inputs)
-        x2 = Dropout(0.2)(x2)
-        
-        # --- Branch 3: 1D CNN (local pattern detector) ---
-        x3 = Conv1D(32, kernel_size=3, padding='causal', activation='relu')(inputs)
-        x3 = BatchNormalization()(x3)
-        x3 = Conv1D(16, kernel_size=3, padding='causal', activation='relu')(x3)
-        x3 = GlobalAveragePooling1D()(x3)
-        
-        # --- Merge all branches ---
-        merged = Concatenate()([x1, x2, x3])
-        out = Dense(32, activation='relu')(merged)
+
+        # ── Multi-scale TCN branches ──────────────────────────
+        def tcn_block(x, filters, dilation):
+            skip = x
+            x = Conv1D(filters, 3, dilation_rate=dilation,
+                       padding='causal', activation='relu')(x)
+            x = BatchNormalization()(x)
+            x = Dropout(0.2)(x)
+            x = Conv1D(filters, 1)(x)   # pointwise
+            # residual
+            if skip.shape[-1] != filters:
+                skip = Conv1D(filters, 1)(skip)
+            return Add()([x, skip])
+
+        x = tcn_block(inputs, 32, dilation=1)
+        x = tcn_block(x,      32, dilation=2)
+        x = tcn_block(x,      64, dilation=4)
+        x = tcn_block(x,      64, dilation=8)
+
+        # ── Self-attention on top ─────────────────────────────
+        attn = MultiHeadAttention(num_heads=4, key_dim=16)(x, x)
+        attn = LayerNormalization()(attn + x)
+
+        out = GlobalAveragePooling1D()(attn)
+        out = Dense(32, activation='relu')(out)
         out = Dropout(0.2)(out)
         out = Dense(1, activation='sigmoid')(out)
-        
+
         model = Model(inputs, out)
         model.compile(
             optimizer='adam',

@@ -172,6 +172,23 @@ class FeatureEngine:
 
         df['entropy_20'] = rolling_entropy(df['tick_diff'], 20)
 
+        # ── HURST EXPONENT (trend vs random walk detector) ──
+        def hurst_exponent(series, max_lag=20):
+            """H > 0.5 = trending, H < 0.5 = mean-reverting, H ≈ 0.5 = random"""
+            lags = range(2, max_lag)
+            tau = []
+            for lag in lags:
+                tau.append(np.std(series[lag:] - series[:-lag]))
+            poly = np.polyfit(np.log(list(lags)), np.log(tau), 1)
+            return poly[0]  # slope = Hurst exponent
+
+        df['hurst'] = df['quote'].rolling(50).apply(
+            lambda x: hurst_exponent(x.values) if len(x) == 50 else 0.5,
+            raw=False
+        )
+        # Only trade when H deviates from random (0.5)
+        df['regime_edge'] = (df['hurst'] - 0.5).abs()  # higher = more predictable
+
         # ─────────────────────────────────────────────
         # VOLATILITY REGIME LABEL  ← NEW (0=low, 1=med, 2=high)
         # ─────────────────────────────────────────────

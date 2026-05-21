@@ -140,7 +140,7 @@ class PositionSizer:
 
         # ── 3. Kelly sizing ────────────────────────────────────────────────
         win_rate = self._estimate_win_rate()
-        kelly    = self._kelly(win_rate)
+        kelly    = self._kelly(win_rate, vol_regime=vol_regime)
         raw_stake = self.balance * kelly
 
         # Apply base_stake_pct as floor (use whichever is larger, up to max)
@@ -187,15 +187,22 @@ class PositionSizer:
             return 0.50    # conservative prior
         return sum(window) / len(window)
 
-    def _kelly(self, win_rate: float, win_loss_ratio: float = 1.0) -> float:
+    def _kelly(self, win_rate, win_loss_ratio=0.95, vol_regime=1):
         """
-        Kelly fraction = (p * b - q) / b
-        Uses quarter-Kelly for safety.
+        Kelly adjusted for current volatility regime.
+        In high-vol regimes, shrink stake automatically.
         """
         q = 1 - win_rate
         b = win_loss_ratio
         k = (win_rate * b - q) / b
-        return max(0.0, k * self.cfg.kelly_fraction)
+        k = max(0.0, k)
+
+        # Volatility penalty: shrink in high-vol regimes
+        # vol_regime: 0=low, 1=med, 2=high
+        vol_penalties = {0: 1.0, 1: 0.75, 2: 0.25}
+        vol_mult = vol_penalties.get(vol_regime, 0.75)
+
+        return k * self.cfg.kelly_fraction * vol_mult
 
     @staticmethod
     def _reject(reason: str) -> SizingDecision:

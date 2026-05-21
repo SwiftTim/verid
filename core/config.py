@@ -5,7 +5,7 @@ Optimized for single-tick prediction with live retraining
 
 # ==================== DATA CONFIGURATION ====================
 # Optimized for ~1 tick/second markets (Deriv synthetic indices)
-BUFFER_SIZE = 15000  # Rolling window size (ticks) - ~4 hours of data
+BUFFER_SIZE = 30000  # Rolling window size (ticks) - ~8 hours of data
 SEQUENCE_LENGTH = 20  # Short memory for fast adaptation
 TRAIN_TEST_SPLIT = 0.8  # Time-based split ratio
 
@@ -73,7 +73,7 @@ RISK_CONFIG = {
 # ==================== RETRAINING STRATEGY ====================
 # Optimized for ~1 tick/second (retrains every ~30-40 minutes)
 RETRAIN_CONFIG = {
-    'tick_interval': 2000,  # Retrain every N ticks (~33 minutes at 1 tick/sec)
+    'tick_interval': 1000,  # Retrain every ~15 minutes at 1 tick/sec
     'min_buffer_size': 500,  # Minimum data before first train (~8 minutes)
     'force_retrain_on_accuracy_drop': True,
     'accuracy_drop_threshold': 0.05  # Retrain if accuracy drops 5%

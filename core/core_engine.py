@@ -100,7 +100,7 @@ class HybridEngine:
         df = self.feature_engine.transform(df)
         
         # 3. Create sequences
-        X, y = self.data_engine.create_sequences(df, lookahead=3)
+        X, y = self.data_engine.create_sequences(df, lookahead=5)
         
         if len(X) == 0:
             raise ValueError("Failed to create sequences")
@@ -121,6 +121,27 @@ class HybridEngine:
         lstm_eval = self.lstm_engine.evaluate(X_test, y_test)
         tree_eval = self.tree_engine.evaluate(X_test, y_test)
         
+        # 8. Train the meta-learner stacker (New)
+        print("  Training meta-learner stacker...")
+        lstm_train_probs = self.lstm_engine.predict_proba(X_train)
+        X_train_flat = X_train.reshape(X_train.shape[0], -1)
+        tree_train_probs = self.tree_engine.predict_proba(X_train_flat)
+
+        self.ensemble_engine.calibrate_and_stack(
+            lstm_train_probs,
+            tree_train_probs,
+            y_train
+        )
+        print("  ✅ Meta-learner stacker trained")
+
+        # 9. Calibrate threshold (New)
+        print("  Calibrating threshold...")
+        lstm_test_probs = self.lstm_engine.predict_proba(X_test)
+        X_test_flat = X_test.reshape(X_test.shape[0], -1)
+        tree_test_probs = self.tree_engine.predict_proba(X_test_flat)
+        combined_test = (lstm_test_probs + tree_test_probs) / 2
+        self.ensemble_engine.calibrate_threshold(combined_test, y_test)
+
         self.is_trained = True
         self.last_retrain_tick = self.tick_count
         
@@ -132,12 +153,14 @@ class HybridEngine:
             'samples_trained': len(X_train),
             'samples_tested': len(X_test),
             'lstm_accuracy': lstm_eval['accuracy'],
-            'tree_accuracy': tree_eval['accuracy']
+            'tree_accuracy': tree_eval['accuracy'],
+            'calibrated_threshold': self.ensemble_engine.threshold
         }
         
         print(f"✅ Initial training complete in {elapsed:.2f}s")
         print(f"   LSTM accuracy: {lstm_eval['accuracy']:.2%}")
         print(f"   Tree accuracy: {tree_eval['accuracy']:.2%}")
+        print(f"   Calibrated threshold: {self.ensemble_engine.threshold:.2f}")
         
         return results
     
@@ -169,6 +192,7 @@ class HybridEngine:
         entropy       = float(df['entropy_20'].iloc[-1])     if 'entropy_20'    in df.columns else np.nan
         vol_regime    = float(df['vol_regime'].iloc[-1])     if 'vol_regime'    in df.columns else 1.0
         market_regime = float(df['market_regime'].iloc[-1])  if 'market_regime' in df.columns else 0.0
+        regime_edge   = float(df['regime_edge'].iloc[-1])    if 'regime_edge'   in df.columns else 0.5
 
         decision, confidence = self.ensemble_engine.make_decision(
             combined_prob,
@@ -177,7 +201,8 @@ class HybridEngine:
             tree_prob=tree_prob,
             entropy=entropy,
             vol_regime=vol_regime,
-            market_regime=market_regime
+            market_regime=market_regime,
+            regime_edge=regime_edge
         )
         
         # Regime/RL filter
@@ -312,10 +337,15 @@ class HybridEngine:
         if hasattr(self.q_agent, 'decay_epsilon'):
             self.q_agent.decay_epsilon()
         
-        # Update adaptive threshold
-        recent_acc = self.ensemble_engine.get_recent_accuracy(200)
-        if recent_acc is not None:
-            self.ensemble_engine.update_threshold(recent_acc)
+        # ── 4. Re-calibrate Meta-Learner ──
+        print("  Re-calibrating meta-learner and threshold...")
+        lstm_probs = self.lstm_engine.predict_proba(X_train)
+        tree_probs = self.tree_engine.predict_proba(X_train_flat)
+        self.ensemble_engine.calibrate_and_stack(lstm_probs, tree_probs, y_train)
+        
+        # Walk-forward threshold calibration
+        combined_prob = (lstm_probs + tree_probs) / 2
+        self.ensemble_engine.calibrate_threshold(combined_prob, y_train)
         
         self.last_retrain_tick = self.tick_count
         
